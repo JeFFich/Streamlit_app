@@ -234,7 +234,7 @@ PRESETS_BY_VERTICAL = {
         {'category_name': 'SP-SpareParts', 'logical_category': ['Goods.SpareParts', 'Goods.SparePartsServices']},
         {'category_name': 'SP-Tires', 'logical_category': ['Goods.TiresAndWheels']}
     ],
-    "Jobs&Gigs": [
+    "Jobs": [
         {'category_name': 'JobsCore', 'logical_category': ['Vacancies.ManualAndLinear']}
     ],
     "Gigs": [
