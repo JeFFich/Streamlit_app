@@ -47,19 +47,19 @@ _PREFIX_TO_VERTICAL: dict[str, str] = {
     "Goods": "Goods",
     "Services": "Services",
     "Transport": "Transport",
-    "Realty": "Realty&Travel",
-    "Travel": "Realty&Travel",
-    "Vacancies": "Vacancies&Gigs",
-    "Gigs": "Vacancies&Gigs",
+    "Realty": "Realty",
+    "Travel": "Travel",
+    "Vacancies": "Vacancies",
+    "Gigs": "Gigs",
     # Jobs — алиас для Vacancies (исторический; в CE_dict встречается 'Jobs&Gigs').
-    "Jobs": "Vacancies&Gigs",
+    "Jobs": "Vacancies",
 }
 
 # В CE_dict вертикальный ключ когда-то писался как `Jobs&Gigs`, а в
 # value_dict / yoy_dict — как `Vacancies&Gigs`. Чтобы lookup не падал,
 # при поиске вертикали в словаре пробуем оба варианта.
 _VERTICAL_ALIASES: dict[str, list[str]] = {
-    "Vacancies&Gigs": ["Vacancies&Gigs", "Jobs&Gigs"],
+    "Vacancies": ["Vacancies", "Jobs"],
 }
 
 
