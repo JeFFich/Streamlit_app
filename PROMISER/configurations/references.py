@@ -140,11 +140,12 @@ VERTICAL_REFERENCE_FLIGHTS: dict[str, list[str]] = {
         + CLOSEST_START_RK["HealthAndBeauty"]
     ),
     "Transport": CLOSEST_START_RK["Cars"],
-    "Realty&Travel": (
+    "Realty": (
         CLOSEST_START_RK["RRE"]
         + CLOSEST_START_RK["LTR"]
     ),
     "Travel": CLOSEST_START_RK["Rent"],
-    "Vacancies&Gigs": CLOSEST_START_RK["JobsCore"],
+    "Vacancies": CLOSEST_START_RK["JobsCore"],
+    "Gigs": CLOSEST_START_RK["JobsCore"],
     "Horizontal": CLOSEST_START_RK["AvitoAll"]
 }
