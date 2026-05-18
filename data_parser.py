@@ -51,10 +51,7 @@ def load_google_sheets(
     competitors_trp_df = None
     
     try:
-        parser = GoogleSheetsParser(
-            token_path=str(token_path),
-            credentials_path=str(credentials_path),
-        )
+        parser = GoogleSheetsParser()
     except Exception as e:
         return None, None, f"Ошибка авторизации Google Sheets: {e}"
 

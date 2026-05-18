@@ -1,8 +1,11 @@
 import plotly.graph_objects as go
 import gspread
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 import pandas as pd
 from datetime import datetime
 from typing import Dict, List
+import streamlit as st
 
 from configs import BUDGET_COEFF_CORRECTRION
 
@@ -903,10 +906,21 @@ def create_media_plan_google_sheet(
     """
     
     # Авторизация через личный аккаунт
-    gc = gspread.oauth(
-        credentials_filename=credentials_filename,
-        authorized_user_filename=token_filename
+    token_info = st.secrets["token"]
+    
+    creds = Credentials(
+        token=token_info["token"],
+        refresh_token=token_info["refresh_token"],
+        token_uri=token_info["token_uri"],
+        client_id=token_info["client_id"],
+        client_secret=token_info["client_secret"],
+        scopes=list(token_info["scopes"]),
     )
+    
+    if creds.expired or not creds.valid:
+        creds.refresh(Request())
+    
+    gc = gspread.authorize(creds)
 
     # Генерируем название таблицы
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

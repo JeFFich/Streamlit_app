@@ -136,10 +136,7 @@ class MatrixBuilder:
     @property
     def parser(self) -> GoogleSheetsParser:
         if self._parser is None:
-            self._parser = GoogleSheetsParser(
-                token_path=config.TOKEN_PATH,
-                credentials_path=config.CREDENTIALS_PATH,
-            )
+            self._parser = GoogleSheetsParser()
         return self._parser
 
     # ---- 1. подготовка данных -------------------------------------------
