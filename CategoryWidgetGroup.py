@@ -183,7 +183,7 @@ class CategoryWidgetGroup:
                         st.session_state[self._key("name")] = selected or ""
                     else:
                         st.warning(
-                            f"Нет доступных категорий для вертикали «{self._vertical_name}». "
+                            f"Нет доступных категорий для вертикали «{self._vertical}». "
                             "Загрузите таблицу или введите вручную."
                         )
                         
