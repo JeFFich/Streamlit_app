@@ -49,17 +49,17 @@ def _get_cost_multipliers(category_info: Dict) -> Dict[str, float]:
 
     if chrono == "40/20 s":
         return {
-            "single": 0.97,
-            "multi_first": 0.97,
-            "multi_cont": 0.9875
+            "single": 1.54,
+            "multi_first": 1.54,
+            "multi_cont": 1.23
         }
     else:
         if vertical == "Goods":
-            single_mult = 1.0175
+            single_mult = 0.85
         else:
-            single_mult = 1.025
+            single_mult = 0.79
         return {
             "single": single_mult,
-            "multi_first": 1.02,
-            "multi_cont": 1.0375
+            "multi_first": 0.83,
+            "multi_cont": 0.69
         }
