@@ -239,7 +239,7 @@ def validate_vertical(vertical_idx: int, cat_values: List[Dict]) -> List[Validat
     # 1. Сумма (мин_бюджет * мин_число_РК) по категориям ≤ макс. бюджет вертикали
     if cat_values:
         sum_min_budgets = sum(
-            cv["min_budget"] * cv["min_campaigns"] for cv in cat_values
+            cv["min_budget"] for cv in cat_values
         )
 
         if sum_min_budgets > vert_max_budget:
