@@ -21,3 +21,7 @@ Thumbs.db
 
 # CSV
 *.csv
+
+# Ненужные папки и избычтоные файлы
+./Optimizer
+./PROMISER_prediction_dict.pkl

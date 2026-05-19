@@ -3,6 +3,8 @@ from typing import Dict, List
 
 from Optimizer.process_data import _get_cost, _get_cost_multipliers
 
+# Суперкостыльная поправка бюджета (из-за нединамического расчета можем завышать/занижать оценку на ~2%)
+BUDGET_AVG_ERROR = 0.02
 
 def _add_vertical_campaign_count_constraints(
     model: pulp.LpProblem,
@@ -110,14 +112,6 @@ def _add_vertical_budget_constraints(
     for vetrical, vertical_info in verticals.items():
         categories_in_vertical = [category for category, category_info in categories.items() 
                                   if category_info["vertical"] == vetrical]
-
-        # for category in categories_in_vertical:
-        #     for month in months:
-        #         for trp in trp_levels:
-        #             print(f"category={category}, month={month}")
-        #             print(f"cost type: {type(_get_cost(costs, category, month))}, value: {_get_cost(costs, category, month)}")
-        #             print(f"trp type: {type(trp)}, value: {trp}")
-        #             print(f"x type: {type(vars['x'][category][month][trp])}")
         
         total_budget = pulp.lpSum(
             vars["budget"][category][month]
@@ -126,7 +120,7 @@ def _add_vertical_budget_constraints(
         )
 
         model += (
-            total_budget <= vertical_info["max_budget"],
+            total_budget <= vertical_info["max_budget"] * (1 + BUDGET_AVG_ERROR),
             f"Ogr3_vert_max_budget_{vetrical}"
         )
         
@@ -272,12 +266,12 @@ def _add_category_budget_constraints(
         total_budget_c = pulp.lpSum(vars["budget"][category][month] for month in months)
 
         model += (
-            total_budget_c >= category_info["min_budget"],
+            total_budget_c >= category_info["min_budget"] * (1 - BUDGET_AVG_ERROR),
             f"Ogr8_cat_min_budget_{category}"
         )
         
         model += (
-            total_budget_c <= category_info["max_budget"],
+            total_budget_c <= category_info["max_budget"] * (1 + BUDGET_AVG_ERROR),
             f"Ogr8_cat_max_budget_{category}"
         )
         

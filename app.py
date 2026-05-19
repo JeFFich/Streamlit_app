@@ -5,7 +5,7 @@ import pandas as pd
 from CategoryWidgetGroup import CategoryWidgetGroup, ValidationError
 from data_parser import load_google_sheets, get_competitor_categories, get_target_audiences, transform_trp_comp_info, get_promiser_forecasts, transform_trp_cost_info, get_trp_categories_by_vertical
 from configs import *
-from Optimizer.MediaPlanOptimizer import MediaPlanOptimizer
+from OptimizerNew.MediaPlanOptimizer import MediaPlanOptimizer
 from Output import create_media_plan_google_sheet, create_media_plan_chart
 
 

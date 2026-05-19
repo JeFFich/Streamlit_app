@@ -1,3 +1,4 @@
+absl-py==2.3.1
 altair==5.5.0
 appnope==0.1.4
 asttokens==3.0.1
@@ -28,6 +29,7 @@ gspread==6.2.1
 highspy==1.14.0
 httplib2==0.31.2
 idna==3.13
+immutabledict==4.3.1
 importlib_metadata==8.7.1
 ipykernel==6.31.0
 ipython==8.18.1
@@ -45,6 +47,7 @@ nest-asyncio==1.6.0
 numpy==2.0.2
 oauthlib==3.3.1
 openpyxl==3.1.5
+ortools==9.15.6755
 packaging==25.0
 pandas==2.3.3
 parso==0.8.7

@@ -144,7 +144,7 @@ class MatrixBuilder:
         """Шаги 1-3: грузим исторические данные, кривые охвата и привязываем к новым флайтам."""
         if self.history_df is None:
             self.history_df = load_history_df(self.parser)
-
+        
         if not self.reach_curves:
             self.reach_curves = load_reach_curves(
                 self.parser, list(self.history_df["flight"])

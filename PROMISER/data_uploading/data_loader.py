@@ -18,7 +18,7 @@ from PROMISER.data_uploading.table_parser import GoogleSheetsParser
 # ---------------------------------------------------------------------------
 # Историческая таблица флайтов
 # ---------------------------------------------------------------------------
-def load_history_df(parser: GoogleSheetsParser) -> pd.DataFrame:
+def load_history_df(parser: GoogleSheetsParser, list_name = 'results') -> pd.DataFrame:
     """Возвращает таблицу с фактом по историческим РК.
 
     Слитая таблица из двух листов:
@@ -31,7 +31,7 @@ def load_history_df(parser: GoogleSheetsParser) -> pd.DataFrame:
       metric_abs_analytics, mde_abs, OPM, consideration, vertical, ...
     """
     df_campaigns = parser.read_sheet(config.CAMPAIGNS_SHEET_ID, "data Nat TV")
-    df_metrics = parser.read_sheet(config.METRICS_SHEET_ID, "results")
+    df_metrics = parser.read_sheet(config.METRICS_SHEET_ID, list_name)
 
     # Колонки факта: SOV в долях (входит как "12.3%"), TRP — сетка по 250.
     df_campaigns["SOV\nAll 18-54"] = df_campaigns["SOV\nAll 18-54"].apply(

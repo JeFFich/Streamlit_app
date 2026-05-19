@@ -134,7 +134,7 @@ def _get_cost_multipliers(category_info: Dict) -> Dict[str, float]:
             single_mult = 1.025
 
         return {
-            "single": 1.02,
+            "single": single_mult,
             "multi_first": 1.02,
             "multi_cont": 1.0375
         }
