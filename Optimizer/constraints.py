@@ -1,6 +1,6 @@
 import pulp
 from typing import Dict, List
-
+ 
 from Optimizer.process_data import _get_cost, _get_cost_multipliers
 
 # Суперкостыльная поправка бюджета (из-за нединамического расчета можем завышать/занижать оценку на ~2%)
