@@ -390,103 +390,110 @@ def add_cumulative_trp_constraints(
 # БЮДЖЕТ С УЧЕТОМ КОРРЕКЦИЙ
 # =========================================================================
 
-def add_dynamic_cost_constraints(
-    model: pulp.LpProblem,
-    categories: Dict[str, Dict],
-    months: List[int],
-    trp_levels: List[int],
-    costs: Dict[str, Dict[int, float]],
-    vars: Dict[str, Dict]
-) -> pulp.LpProblem:
+def add_dynamic_cost_constraints(model, categories, months, trp_levels, costs, vars):
     """
-    Добавляет ограничения для вычисления бюджета с динамическими множителями.
-    Создаёт переменную budget[c][m] и связывает её с tau и состоянием месяца.
+    Точный расчёт бюджета с динамическими множителями.
     
-    :param model: Задача оптимизации, которую пополняем ограничениями
-    :param categories: Словарь с информацией по категориям
-    :param trp_levels: Список возможных уровней TRP
-    :param costs: Словарь со стоимостями 1 TRP по категориям за каждый месяц
-    :param months: Список месяцев планирования
-    :param vars: Словарь с переменными задачи оптимизации
-
-    :return: Задача оптимизации с добавленными ограничениями
+    Используем линеаризацию: tau_state = tau * indicator_state
+    через Big-M (но Big-M здесь = max_TRP, что мало и не создаёт проблем).
     """
     
-    # Большая константа для ограничений
-    big_M_budget = max(trp_levels) * max(max(costs[category].values()) for category in categories) * 1.05
+    max_tau = max(trp_levels)  # 5500 — маленький Big-M для TRP
     
-    # Создаём переменные budget[c][m]
     vars["budget"] = {}
+    vars["tau_single"] = {}
+    vars["tau_multi_first"] = {}
+    vars["tau_cont"] = {}
+    
     for category in categories:
-        vars["budget"][category] = {}
-        for month in months:
-            vars["budget"][category][month] = pulp.LpVariable(
-                f"budget_{category}_{month}", lowBound=0, cat="Continuous"
-            )
-
-    for category in categories:
-        # Корректирующие множители стоимостей
         mults = _get_cost_multipliers(categories[category])
-
+        
+        vars["budget"][category] = {}
+        vars["tau_single"][category] = {}
+        vars["tau_multi_first"][category] = {}
+        vars["tau_cont"][category] = {}
+        
         for month in months:
             base_cost = costs[category][month]
-            tau = pulp.lpSum(trp * vars["x"][category][month][trp] for trp in trp_levels + [0])
-
-            # Три варианта итоговой стоимости TRP:
-            cost_single = base_cost * mults["single"]
-            cost_multi_first = base_cost * mults["multi_first"]
-            cost_cont = base_cost * mults["multi_cont"]
-
-            # tau в каждом состоянии:
-            tau_expr = pulp.lpSum(trp * vars["x"][category][month][trp] for trp in trp_levels + [0])
-
-            # Состояние 1: одномесячная РК (single = 1)
-            budget_if_single = cost_single * tau_expr
-            # Состояние 2: первый месяц многомесячной (s = 1, single = 0)
-            budget_if_multi_first = cost_multi_first * tau_expr
-            # Состояние 3: продолжение (y = 1, s = 0)
-            budget_if_cont = cost_cont * tau_expr
-
+            tau_expr = pulp.lpSum(
+                trp * vars["x"][category][month][trp] for trp in trp_levels + [0]
+            )
+            
             single = vars["single"][category][month]
             s = vars["s"][category][month]
             y = vars["y"][category][month]
-            multi_first = s - single  # = 1 только при старте многомесячной РК
-            cont = y - s              # = 1 только при продолжении
-
-            # Связующие ограничения
-            model += (
-                vars["budget"][category][month] >= budget_if_single - big_M_budget * (1 - single),
-                f"budget_single_lb_{category}_{month}"
+            
+            # --- tau_single: = tau если single=1, иначе 0 ---
+            vars["tau_single"][category][month] = pulp.LpVariable(
+                f"tau_single_{category}_{month}", lowBound=0, upBound=max_tau, cat="Continuous"
             )
- 
-            model += (
-                vars["budget"][category][month] <= budget_if_single + big_M_budget * (1 - single),
-                f"budget_single_ub_{category}_{month}"
+            ts = vars["tau_single"][category][month]
+            
+            # ts <= tau
+            model += (ts <= tau_expr, f"ts_le_tau_{category}_{month}")
+            # ts <= max_tau * single
+            model += (ts <= max_tau * single, f"ts_le_single_{category}_{month}")
+            # ts >= tau - max_tau * (1 - single)
+            model += (ts >= tau_expr - max_tau * (1 - single), f"ts_ge_tau_{category}_{month}")
+            # ts >= 0 (уже через lowBound)
+            
+            # --- tau_multi_first: = tau если (s=1 и single=0), иначе 0 ---
+            # multi_first_indicator = s - single (бинарная по построению)
+            vars["tau_multi_first"][category][month] = pulp.LpVariable(
+                f"tau_mf_{category}_{month}", lowBound=0, upBound=max_tau, cat="Continuous"
             )
-
-            model += (
-                vars["budget"][category][month] >= budget_if_multi_first - big_M_budget * (1 - s + single) - big_M_budget * (1 - y),
-                f"budget_multi_first_lb_{category}_{month}"
+            tmf = vars["tau_multi_first"][category][month]
+            mf = s - single  # Это LpExpression, но принимает значения 0 или 1
+            
+            # Нужна вспомогательная бинарная переменная для (s - single)
+            # Но мы знаем: mf = s - single >= 0 (single <= s из linking)
+            # и mf <= 1 (s <= 1, single >= 0)
+            # Создадим явную переменную:
+            mf_var = pulp.LpVariable(
+                f"mf_{category}_{month}", lowBound=0, upBound=1, cat="Binary"
+            )
+            model += (mf_var == s - single, f"mf_def_{category}_{month}")
+            
+            # tmf <= tau
+            model += (tmf <= tau_expr, f"tmf_le_tau_{category}_{month}")
+            # tmf <= max_tau * mf_var
+            model += (tmf <= max_tau * mf_var, f"tmf_le_mf_{category}_{month}")
+            # tmf >= tau - max_tau * (1 - mf_var)
+            model += (tmf >= tau_expr - max_tau * (1 - mf_var), f"tmf_ge_tau_{category}_{month}")
+            
+            # --- tau_cont: = tau если (y=1 и s=0), иначе 0 ---
+            vars["tau_cont"][category][month] = pulp.LpVariable(
+                f"tau_cont_{category}_{month}", lowBound=0, upBound=max_tau, cat="Continuous"
+            )
+            tc = vars["tau_cont"][category][month]
+            cont_var = pulp.LpVariable(
+                f"cont_{category}_{month}", lowBound=0, upBound=1, cat="Binary"
+            )
+            model += (cont_var == y - s, f"cont_def_{category}_{month}")
+            
+            # tc <= tau
+            model += (tc <= tau_expr, f"tc_le_tau_{category}_{month}")
+            # tc <= max_tau * cont_var
+            model += (tc <= max_tau * cont_var, f"tc_le_cont_{category}_{month}")
+            # tc >= tau - max_tau * (1 - cont_var)
+            model += (tc >= tau_expr - max_tau * (1 - cont_var), f"tc_ge_tau_{category}_{month}")
+            
+            # --- budget = base_cost * (mult_single * tau_single 
+            #                          + mult_multi_first * tau_multi_first 
+            #                          + mult_cont * tau_cont) ---
+            vars["budget"][category][month] = pulp.LpVariable(
+                f"budget_{category}_{month}", lowBound=0, cat="Continuous"
+            )
+            
+            budget_expr = (
+                base_cost * mults["single"] * ts
+                + base_cost * mults["multi_first"] * tmf
+                + base_cost * mults["multi_cont"] * tc
             )
             
             model += (
-                vars["budget"][category][month] <= budget_if_multi_first + big_M_budget * (1 - s + single),
-                f"budget_multi_first_ub_{category}_{month}"
+                vars["budget"][category][month] == budget_expr,
+                f"budget_def_{category}_{month}"
             )
-
-            model += (
-                vars["budget"][category][month] >= budget_if_cont - big_M_budget * s - big_M_budget * (1 - y),
-                f"budget_cont_lb_{category}_{month}"
-            )
-            
-            model += (
-                vars["budget"][category][month] <= budget_if_cont + big_M_budget * s,
-                f"budget_cont_ub_{category}_{month}"
-            )
-
-            model += (
-                vars["budget"][category][month] <= big_M_budget * y,
-                f"budget_zero_{category}_{month}"
-            )
-
+    
     return model

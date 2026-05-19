@@ -3,7 +3,7 @@ import pulp
 from typing import Dict, List, Tuple, Any
 
 from Optimizer.variables import create_variables, add_linking_constraints, add_cumulative_trp_constraints, add_dynamic_cost_constraints
-from Optimizer.constraints import add_logical_constraints, _get_cost
+from Optimizer.constraints import add_logical_constraints, _get_cost, _add_duration_constraints
 from Optimizer.objectives import add_objective
 from Optimizer.process_data import _compute_overlap_map, _get_competitor_trp, _get_cost, _get_dtb, _get_revenue
 
@@ -24,7 +24,7 @@ class MediaPlanOptimizer:
                  solver_time_limit: int = 1200,
                  solver_gap: float = 0.01,
                  solver_threads: int = 4,
-                 big_M: int = 1e5):
+                 big_M_TRP: int = 1e5):
         """
         :param trp_levels: Список допустимых уровней TRP для РК
         :param months: Список месяцев планирования
@@ -44,7 +44,7 @@ class MediaPlanOptimizer:
         self.solver_time_limit = solver_time_limit
         self.solver_gap = solver_gap
         self.solver_threads = solver_threads
-        self.big_M = big_M
+        self.big_M_TRP = big_M_TRP
 
         # Внутренние структуры — заполняются при вызове optimize()
         self.prob = None
@@ -377,12 +377,94 @@ class MediaPlanOptimizer:
         # Добавляем связующие ограничения, динамический расчет бюджета и кумулятивный расчет TRP 
         self.prob = add_linking_constraints(self.prob, self.categories, self.months, self.trp_levels, self.vars)
         self.prob = add_cumulative_trp_constraints(self.prob, self.categories, self.months, self.trp_levels, self.vars, 
-                                                   self.competitors, self.big_M)
+                                                   self.competitors, self.big_M_TRP)
         self.prob = add_dynamic_cost_constraints(self.prob, self.categories, self.months, self.trp_levels, self.costs, self.vars)
+        
+        # #### ОТЛАДКА
+        # model = pulp.LpProblem("debug", pulp.LpMaximize)
+        # vars = create_variables(self.categories, self.months, self.trp_levels)
+        # model = add_linking_constraints(model, self.categories, self.months, self.trp_levels, vars)
+        # model = add_cumulative_trp_constraints(model, self.categories, self.months, self.trp_levels, vars, self.competitors, self.big_M_TRP)
+
+        # # Ограничение 6: max TRP на одну РК
+        # for m in self.months:
+        #     model += (vars["CTRP"]["Rent"][m] <= 5500, f"max_trp_{m}")
+
+        # # Ограничение 12: min TRP вертикали
+        # model += (
+        #     pulp.lpSum(t * vars["x"]["Rent"][m][t] for m in self.months for t in self.trp_levels + [0]) >= 6000,
+        #     "min_trp_vertical"
+        # )
+
+        # model += pulp.lpSum(vars["y"]["Rent"][m] for m in self.months)
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"Status: {pulp.LpStatus[model.status]}")
+
+        # # + duration
+        # model = _add_duration_constraints(model, self.categories, self.months, vars)
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ duration: {pulp.LpStatus[model.status]}")
+
+        # # + mandatory (y[4] = 1)
+        # model += (vars["y"]["Rent"][4] == 1, "mandatory_4")
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ mandatory: {pulp.LpStatus[model.status]}")
+
+        # # + category campaigns (min=1, max=2)
+        # n_c = pulp.lpSum(vars["s"]["Rent"][m] for m in self.months)
+        # model += (n_c >= 1, "min_campaigns_cat")
+        # model += (n_c <= 2, "max_campaigns_cat")
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ cat campaigns: {pulp.LpStatus[model.status]}")
+
+        # # + vertical campaigns (min=1, max=2)
+        # model += (n_c <= 2, "max_campaigns_vert")
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ vert campaigns: {pulp.LpStatus[model.status]}")
+
+        # # + min_trp per campaign (CTRP >= 1500 * e)
+        # for m in self.months:
+        #     model += (vars["CTRP"]["Rent"][m] >= 1500 * vars["e"]["Rent"][m], f"min_trp_campaign_{m}")
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ min_trp_campaign: {pulp.LpStatus[model.status]}")
+
+        # # + SOV
+        # for m in self.months:
+        #     model += (
+        #         0.8 * vars["CTRP"]["Rent"][m] >= 0.2 * vars["CTRP_comp"]["Rent"][m] - 100000 * (1 - vars["e"]["Rent"][m]),
+        #         f"sov_{m}"
+        #     )
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ SOV: {pulp.LpStatus[model.status]}")
+
+        # # + cost linking (создаёт переменные single)
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ cost linking: {pulp.LpStatus[model.status]}")
+
+        # # + dynamic cost (создаёт переменные budget)
+        # model = add_dynamic_cost_constraints(model, self.categories, self.months, self.trp_levels, self.costs, vars)
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ dynamic cost (без min/max): {pulp.LpStatus[model.status]}")
+
+        # # + только max budget
+        # budget_expr = pulp.lpSum(vars["budget"]["Rent"][m] for m in self.months)
+        # model += (budget_expr <= 3_000_000_000, "max_budget")
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ max_budget: {pulp.LpStatus[model.status]}")
+
+        # # + min budget
+        # model += (budget_expr >= 250_000_000, "min_budget")
+        # model.solve(pulp.PULP_CBC_CMD(msg=False))
+        # print(f"+ min_budget: {pulp.LpStatus[model.status]}")
+
+        # # Доп. инфо
+        # print(f"\nПеременных: {len(model.variables())}")
+        # print(f"Ограничений: {len(model.constraints)}")
+        # ####
 
         # Добавляем содержательные ограничения
         self.prob = add_logical_constraints(self.prob, self.categories, self.verticals, self.months, self.trp_levels, 
-                                            self.costs, self.vars, self.overlap_map, self.big_M, self.max_total_trp)
+                                            self.costs, self.vars, self.overlap_map, self.big_M_TRP, self.max_total_trp)
 
         # Добавляем целевую функцию
         self.prob = add_objective(self.prob, self.categories, self.forecasts, self.months, self.trp_levels, self.vars, 

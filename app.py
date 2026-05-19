@@ -573,7 +573,7 @@ def main():
                     category_dict[category["name"]] = category
             else:
                 vertical_dict.pop(vertical)
-                
+        
         # Словари по TRP
         trp_cost_dict = transform_trp_cost_info(st.session_state.get("trp_cost_df"), category_dict)
         competitors_dict = transform_trp_comp_info(st.session_state.get("competitors_trp_df"))
