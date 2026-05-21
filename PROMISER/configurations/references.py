@@ -58,12 +58,12 @@ CLOSEST_START_RK: dict[str, list[str]] = {
     ],
     "JobsCore": [
         "Avito_Job_jc-24-08-General-Better_Matching_on_Avito-T1-B2C",
-        "Avito_Job_jc-24-01-General-Find_your_place-T1-B2C",
+        #"Avito_Job_jc-24-01-General-Find_your_place-T1-B2C",
         "Avito_Job_jc-24-06-General-Off_season-T1-B2C",
         "Avito _Job_jc-24-03-General-Find_your_place-T1-B2C",
-        "Avito_Job_jc-25-01-General-T1-B2C",
-        "Avito_Job_jc-25-05-General-Off_Season-T1-B2C",
-        "Avito_Job_jc-25-08-General-T1-B2C",
+        #"Avito_Job_jc-25-01-General-T1-B2C",
+        #"Avito_Job_jc-25-05-General-Off_Season-T1-B2C",
+        #"Avito_Job_jc-25-08-General-T1-B2C",
         "Avito_Job_jc-26-01-General-T1-B2C"
     ],
     "RRE": [
@@ -117,7 +117,9 @@ CLOSEST_START_RK: dict[str, list[str]] = {
         "Avito_Auto_au-25-05-UCB-T1-C2C"
     ],
     "Sellers": [
-        "Avito_Goods_gc-25-07-Sellers-cross-private-T1-B2C"
+        "Avito_Goods_gc-25-07-Sellers-cross-private-T1-B2C",
+        "Avito_Goods_gc-26-03-CC-Resale-T1-C2C",
+        "Avito_Goods_gc-26-02-Sellers-cross-private-reg-T1-B2C"
     ],
     "AvitoAll": [
         "Avito_Horizontal_hz-25-04-CC-Manifest-T1-C2"

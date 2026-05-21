@@ -235,7 +235,8 @@ PRESETS_BY_VERTICAL = {
         {'category_name': 'EL', 'logical_category': ['Goods.AudioVideo', 'Goods.DomesticAppliances', 'Goods.InformationTechnology', 'Goods.Telecom']},
         {'category_name': 'LS-Fashion', 'logical_category': ['Goods.Fashion']},
         {'category_name': 'SP-SpareParts', 'logical_category': ['Goods.SpareParts', 'Goods.SparePartsServices']},
-        {'category_name': 'SP-Tires', 'logical_category': ['Goods.TiresAndWheels']}
+        {'category_name': 'SP-Tires', 'logical_category': ['Goods.TiresAndWheels']},
+        {'category_name': 'Sellers', 'logical_category': ['Goods.Sellers']}
     ],
     "Jobs": [
         {'category_name': 'JobsCore', 'logical_category': ['Vacancies.ManualAndLinear']}
