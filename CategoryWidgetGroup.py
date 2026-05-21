@@ -1,5 +1,5 @@
 import streamlit as st
-from typing import List
+from typing import List, Optional
 from configs import *
 from dataclasses import dataclass
 
@@ -39,6 +39,12 @@ class CategoryWidgetGroup:
         self._on_delete = on_delete
         self._preset = preset
         self._prefix = f"{vertical}_cat_group_{group_id}"
+        
+    def _init_default(self, name: str, default):
+        """Инициализирует значение в session_state, если его ещё нет."""
+        key = self._key(name)
+        if key not in st.session_state:
+            st.session_state[key] = default
 
     def _key(self, name: str) -> str:
         """
@@ -156,11 +162,12 @@ class CategoryWidgetGroup:
                 categories_by_vert = st.session_state.get("categories", {})
                 trp_categories = categories_by_vert.get(self._vertical, [])
                 has_trp_categories = len(trp_categories) > 0
+                radio_options = ["📋 С листа TRP Cost", "✏️ Вручную"]
+                self._init_default("name_input_mode", radio_options[0] if has_trp_categories else radio_options[1])
                 
                 input_mode = st.radio(
                     "Способ ввода названия",
-                    options=["📋 С листа TRP Cost", "✏️ Вручную"],
-                    index=0 if has_trp_categories else 1,
+                    options=radio_options,
                     key=self._key("name_input_mode"),
                     horizontal=True,
                     label_visibility="collapsed"
@@ -170,10 +177,14 @@ class CategoryWidgetGroup:
                 
                 if input_mode == "📋 С листа TRP Cost":
                     if has_trp_categories:
+                        saved_name = self._get("name_from_list", None) # копия
+                        if saved_name and saved_name not in trp_categories:
+                            trp_categories.append(saved_name)
+                            
+                        self._init_default("name_from_list", saved_name)    
                         selected = st.selectbox(
                             "Название категории",
                             options=trp_categories,
-                            index=None,
                             key=self._key("name_from_list"),
                             placeholder=f"Выберите категорию ({self._vertical})...",
                             help=f"Категории для вертикали «{self._vertical}» из листа TRP cost",
@@ -190,9 +201,9 @@ class CategoryWidgetGroup:
                         st.session_state[self._key("name")] = ""
                         
                 else:
+                    self._init_default("name_manual", "")
                     st.text_input(
                         "Название категории",
-                        value="",
                         key=self._key("name_manual"),
                         placeholder="Введите название категории...",
                         help="Произвольное название категории",
@@ -208,40 +219,47 @@ class CategoryWidgetGroup:
                 st.info(f"🔒 {', '.join(self._preset['logical_category'])}")
                 st.session_state[self._key("incoming_categories")] = self._preset["logical_category"]
             else:
+                saved_incoming = self._get("incoming_categories", [])
+                available_options = list(self._incoming_options)
+                # Добавляем сохранённые значения, если их нет в options
+                for val in saved_incoming:
+                    if val not in available_options:
+                        available_options.append(val)
+                
+                self._init_default("incoming_categories", [])
                 st.multiselect(
                     "Входящие логические категории",
-                    options=self._incoming_options,
-                    default=[],
+                    options=available_options,
                     key=self._key("incoming_categories"),
                 )
 
         # --- Строка 2: Минимальный TRP | Минимальный SOV | ROMI по умолчанию ---
         col3, col4, col5 = st.columns(3)
         with col3:
+            self._init_default("min_trp", DEF_TRP)
             st.number_input(
                 "Минимальный TRP",
                 min_value=MIN_TRP,
                 max_value=MAX_TRP,
-                value=DEF_TRP,
                 step=STEP_TRP,
                 key=self._key("min_trp"),
             )
         with col4:
+            self._init_default("min_sov", DEF_SOV)
             st.number_input(
                 "Минимальный SOV",
                 min_value=MIN_SOV,
                 max_value=MAX_SOV,
-                value=DEF_SOV,
                 step=STEP_SOV,
                 format="%.2f",
                 key=self._key("min_sov"),
             )
         with col5:
+            self._init_default("default_romi", DEF_ROMI)
             st.number_input(
                 "ROMI по умолчанию",
                 min_value=MIN_ROMI,
                 max_value=MAX_ROMI,
-                value=DEF_ROMI,
                 step=STEP_ROMI,
                 key=self._key("default_romi"),
                 help="Значение ROMI, используемое при прогнозе DTB для разрезов, где не было РК ранее (при мин. TRP и SOV)"
@@ -250,10 +268,15 @@ class CategoryWidgetGroup:
         # --- Строка 3: Хроно | ЦА | Категория конкурентов ---
         col6, col7, col8 = st.columns(3)
         with col6:
+            chrono_options = ["20/10 s", "40/20 s"]
+            saved_chrono = self._get("chrono", None)
+            if saved_chrono and saved_chrono not in chrono_options:
+                chrono_options.append(saved_chrono)
+            
+            self._init_default("chrono", saved_chrono)
             st.selectbox(
                 "Хроно роликов",
-                options=["20/10 s", "40/20 s"],
-                index=None,
+                options=chrono_options,
                 key=self._key("chrono"),
                 placeholder="Выберите...",
                 help="Два варианта размещений, по которым корректируется стоимость TRP",
@@ -262,21 +285,29 @@ class CategoryWidgetGroup:
         with col7:
             loaded_audiences = st.session_state.get("target_audiences", [])
             target_audience_options = loaded_audiences if loaded_audiences else ["Нет"]
+            saved_ta = self._get("target_audience", None)
+            if saved_ta and saved_ta not in target_audience_options:
+                target_audience_options.append(saved_ta)
             
+            self._init_default("target_audience", saved_ta)
             st.selectbox(
                 "Целевая аудитория",
                 options=target_audience_options,
-                index=None,
                 key=self._key("target_audience"),
                 placeholder="Выберите...",
                 help="Все варианты ЦА из гугл-таблички со стоимостями TRP",
             )
             
         with col8:
+            comp_categories_options = ["Нет"] + st.session_state.get("competitor_categories", [])
+            saved_comp = self._get("competitor_category", None)
+            if saved_comp and saved_comp not in comp_categories_options:
+                comp_categories_options.append(saved_comp)
+            
+            self._init_default("competitor_category", saved_comp)
             st.selectbox(
                 "Категория конкурентов",
-                options=["Нет"] + st.session_state.get("competitor_categories", []),
-                index=None,
+                options=comp_categories_options,
                 key=self._key("competitor_category"),
                 placeholder="Выберите...",
                 help="Категория конкурентов из таблицы TRP (если конкурентов нет, то выберитие опцию «Нет»)",
@@ -285,20 +316,20 @@ class CategoryWidgetGroup:
         # --- Строка 4: Мин. число РК | Макс. число РК ---
         col9, col10 = st.columns(2)
         with col9:
+            self._init_default("min_campaigns", DEF_RK_MIN)
             st.number_input(
                 "Минимальное число РК в категории",
                 min_value=MIN_RK,
                 max_value=MAX_RK,
-                value=DEF_RK_MIN,
                 step=STEP_RK,
                 key=self._key("min_campaigns"),
             )
         with col10:
+            self._init_default("max_campaigns", DEF_RK_MAX)
             st.number_input(
                 "Максимальное число РК в категории",
                 min_value=MIN_RK,
                 max_value=MAX_RK,
-                value=DEF_RK_MAX,
                 step=STEP_RK,
                 key=self._key("max_campaigns"),
             )
@@ -306,20 +337,20 @@ class CategoryWidgetGroup:
         # --- Строка 4: Мин. бюджет | Макс. бюджет ---
         col11, col12 = st.columns(2)
         with col11:
+            self._init_default("min_budget", DEF_BUDG_MIN)
             st.number_input(
                 "Минимальный суммарнный бюджет на все РК в категории (в млн. руб.)",
                 min_value=MIN_BUDG,
                 max_value=MAX_BUDG,
-                value=DEF_BUDG_MIN,
                 step=STEP_BUDG,
                 key=self._key("min_budget"),
             )
         with col12:
+            self._init_default("max_budget", DEF_BUDG_MAX)
             st.number_input(
                 "Максимальный суммарный бюджет на все РК в категории (в млн. руб.)",
                 min_value=MIN_BUDG,
                 max_value=MAX_BUDG,
-                value=DEF_BUDG_MAX,
                 step=STEP_BUDG,
                 key=self._key("max_budget"),
             )
@@ -327,20 +358,20 @@ class CategoryWidgetGroup:
         # --- Строка 5: Мин. длительность | Макс. длительность ---
         col13, col14 = st.columns(2)
         with col13:
+            self._init_default("min_duration", DEF_LEN_MIN)
             st.number_input(
                 "Минимальная длительность РК в категории (мес.)",
                 min_value=MIN_LEN,
                 max_value=MAX_LEN,
-                value=DEF_LEN_MIN,
                 step=STEP_LEN,
                 key=self._key("min_duration"),
             )
         with col14:
+            self._init_default("max_duration", DEF_LEN_MAX)
             st.number_input(
                 "Максимальная длительность РК в категории (мес.)",
                 min_value=MIN_LEN,
                 max_value=MAX_LEN,
-                value=DEF_LEN_MAX,
                 step=STEP_LEN,
                 key=self._key("max_duration"),
             )
@@ -348,17 +379,17 @@ class CategoryWidgetGroup:
         # --- Строка 6: Обязательные месяцы | Чекбокс | Кнопка удаления ---
         col15, col16, col17 = st.columns([3, 2, 1], vertical_alignment="bottom")
         with col15:
+            self._init_default("mandatory_months", [])
             st.multiselect(
                 "Обязательные месяцы проведения РК",
                 options=DEFAULT_MONTHS,
-                default=[],
                 key=self._key("mandatory_months"),
                 help="Месяцы, когда обязана идти РК в данном разрезе (если это не требуется, то нужно оставить пустым)"
             )
         with col16:
+            self._init_default("only_mandatory_months", False)
             st.checkbox(
                 "Старт только в обязательные месяцы",
-                value=False,
                 key=self._key("only_mandatory_months"),
                 help='Если флаг выставлен, то РК может начинаться ТОЛЬКО в обязательные месяцы'
             )
@@ -371,7 +402,7 @@ class CategoryWidgetGroup:
                 use_container_width=True,
                 type="primary"
             )
-            
+    
         # --- Валидация и вывод ошибок ---
         errors = self.validate()
         if errors:
@@ -404,8 +435,8 @@ class CategoryWidgetGroup:
             "min_trp":  st.session_state.get(self._key("min_trp"), 1500),
             "min_sov":  st.session_state.get(self._key("min_sov"), 0.13),
             "default_romi":  st.session_state.get(self._key("default_romi"), -90.0) / 100,
-            "chrono": self._get("chrono", '20s'),
-            "target_audience": self._get("target_audience", 'Все, 18-55'),
+            "chrono": self._get("chrono", '20/10 s'),
+            "target_audience": self._get("target_audience", 'Нет'),
             "competitor_category": self._get("competitor_category", ''),
             "min_campaigns":  st.session_state.get(self._key("min_campaigns"), 1),
             "max_campaigns":  st.session_state.get(self._key("max_campaigns"), 2),

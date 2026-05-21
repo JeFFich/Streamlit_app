@@ -127,17 +127,26 @@ def add_linking_constraints(
     v: Dict
 ) -> None:
     """
-    Добавляет связующие ограничения: x↔y, y↔s, y↔e, s+e↔single, tau=sum(t*x).
+    Связующие ограничения: x↔y, y↔s, y↔e, s+e↔single, tau=sum(t*x).
+    
+    Позволяет двум РК идти подряд без перерыва в 1 месяц.
+    Старт s[m]=1 означает "начало новой РК" и возможен, если предыдущий месяц
+    либо неактивен (y[m-1]=0), либо является концом другой РК (e[m-1]=1).
     """
     cat_names = list(categories.keys())
 
     for c in cat_names:
+        # =====================================================================
+        # C1 + C2: Связь x, y, tau
+        # =====================================================================
         for m in months:
-            # C1: Ровно один уровень TRP выбран
+            # Ровно один уровень TRP выбран (включая 0)
             model.AddExactlyOne(v["x"][c][m][t] for t in trp_levels + [0])
 
-            # C2: y = 1 <=> выбран ненулевой TRP
-            model.Add(sum(v["x"][c][m][t] for t in trp_levels) == 1).OnlyEnforceIf(v["y"][c][m])
+            # y = 1 <=> выбран ненулевой TRP
+            model.Add(
+                sum(v["x"][c][m][t] for t in trp_levels) == 1
+            ).OnlyEnforceIf(v["y"][c][m])
             model.Add(v["x"][c][m][0] == 1).OnlyEnforceIf(v["y"][c][m].Not())
 
             # tau = sum(t * x[t])
@@ -145,27 +154,75 @@ def add_linking_constraints(
                 v["tau"][c][m] == sum(t * v["x"][c][m][t] for t in trp_levels + [0])
             )
 
+        # =====================================================================
         # C3: Определение старта s
-        # s[1] = y[1]
-        model.Add(v["s"][c][months[0]] == v["y"][c][months[0]])
-        for m in months[1:]:
-            # s[m] = 1 <=> y[m]=1 AND y[m-1]=0
-            model.AddBoolAnd([v["y"][c][m], v["y"][c][m - 1].Not()]).OnlyEnforceIf(v["s"][c][m])
-            model.AddBoolOr([v["y"][c][m].Not(), v["y"][c][m - 1]]).OnlyEnforceIf(v["s"][c][m].Not())
+        # s[m] = 1 <=> y[m]=1 AND (y[m-1]=0 OR e[m-1]=1)
+        # Иными словами: s[m]=1 если активна и предыдущий месяц НЕ является
+        # серединой текущей РК (т.е. либо неактивен, либо конец предыдущей РК).
+        # =====================================================================
 
+        # Первый месяц: s[1] = y[1]
+        model.Add(v["s"][c][months[0]] == v["y"][c][months[0]])
+
+        for m in months[1:]:
+            # internal[m] = y[m-1] AND NOT e[m-1]
+            # ("мы внутри РК, начатой ранее" — предыдущий месяц активен и не конец)
+            internal = model.NewBoolVar(f"internal_{c}_{m}")
+            model.AddBoolAnd([v["y"][c][m - 1], v["e"][c][m - 1].Not()]).OnlyEnforceIf(internal)
+            model.AddBoolOr([v["y"][c][m - 1].Not(), v["e"][c][m - 1]]).OnlyEnforceIf(internal.Not())
+
+            # s[m] = y[m] AND NOT internal
+            model.AddBoolAnd([v["y"][c][m], internal.Not()]).OnlyEnforceIf(v["s"][c][m])
+            model.AddBoolOr([v["y"][c][m].Not(), internal]).OnlyEnforceIf(v["s"][c][m].Not())
+
+        # =====================================================================
         # C4: Определение конца e
+        # e[m] = 1 означает "РК заканчивается в месяце m".
+        # Правила:
+        #   - e[m] может быть 1 только если y[m]=1
+        #   - Если y[m]=1 и e[m]=0 → y[m+1]=1 (РК продолжается)
+        #   - Если e[m]=1 и y[m+1]=1 → s[m+1]=1 (следующая — новая РК)
+        #   - Если s[m]=0 и y[m]=1 → e[m-1]=0 (продолжение, предыдущая не кончилась)
+        #   - e[last] = y[last]
+        # =====================================================================
+
         for m in months[:-1]:
-            # e[m] = 1 <=> y[m]=1 AND y[m+1]=0
-            model.AddBoolAnd([v["y"][c][m], v["y"][c][m + 1].Not()]).OnlyEnforceIf(v["e"][c][m])
-            model.AddBoolOr([v["y"][c][m].Not(), v["y"][c][m + 1]]).OnlyEnforceIf(v["e"][c][m].Not())
-        # e[12] = y[12]
+            # e[m] <= y[m] (конец только если активна)
+            model.AddImplication(v["e"][c][m], v["y"][c][m])
+
+            # Если y[m]=1 и e[m]=0 → y[m+1]=1 (нельзя "повиснуть" без конца)
+            active_no_end = model.NewBoolVar(f"ane_{c}_{m}")
+            model.AddBoolAnd([v["y"][c][m], v["e"][c][m].Not()]).OnlyEnforceIf(active_no_end)
+            model.AddBoolOr([v["y"][c][m].Not(), v["e"][c][m]]).OnlyEnforceIf(active_no_end.Not())
+            model.AddImplication(active_no_end, v["y"][c][m + 1])
+
+        # Последний месяц: e[12] = y[12]
         model.Add(v["e"][c][months[-1]] == v["y"][c][months[-1]])
 
-        # C5: single = s AND e
+        # Согласованность e→s: если e[m]=1 и y[m+1]=1 → s[m+1]=1
+        # (конец текущей РК + активность в следующем месяце = новый старт)
+        for m in months[:-1]:
+            end_and_next_active = model.NewBoolVar(f"en_{c}_{m}")
+            model.AddBoolAnd([v["e"][c][m], v["y"][c][m + 1]]).OnlyEnforceIf(end_and_next_active)
+            model.AddBoolOr([v["e"][c][m].Not(), v["y"][c][m + 1].Not()]).OnlyEnforceIf(end_and_next_active.Not())
+            model.AddImplication(end_and_next_active, v["s"][c][m + 1])
+
+        # Согласованность s→e: если s[m]=0 и y[m]=1 → e[m-1]=0
+        # (продолжение РК → предыдущий месяц не мог быть концом)
+        for m in months[1:]:
+            continuation = model.NewBoolVar(f"nsa_{c}_{m}")
+            model.AddBoolAnd([v["s"][c][m].Not(), v["y"][c][m]]).OnlyEnforceIf(continuation)
+            model.AddBoolOr([v["s"][c][m], v["y"][c][m].Not()]).OnlyEnforceIf(continuation.Not())
+            model.AddImplication(continuation, v["y"][c][m - 1])
+            model.AddImplication(continuation, v["e"][c][m - 1].Not())
+
+        # =====================================================================
+        # C5: single = s AND e (одномесячная РК: старт и конец в одном месяце)
+        # =====================================================================
         for m in months:
             model.AddBoolAnd([v["s"][c][m], v["e"][c][m]]).OnlyEnforceIf(v["single"][c][m])
             model.AddBoolOr([v["s"][c][m].Not(), v["e"][c][m].Not()]).OnlyEnforceIf(v["single"][c][m].Not())
-
+            
 def add_cumulative_trp_constraints(
     model: cp_model.CpModel,
     categories: Dict[str, Dict],
@@ -175,7 +232,7 @@ def add_cumulative_trp_constraints(
     competitors: Dict[str, Dict]
 ) -> None:
     """
-    Кумулятивный TRP и TRP конкурентов. Без Big-M — через OnlyEnforceIf.
+    Кумулятивный TRP. Сбрасывается при каждом старте (s[m]=1).
     """
     cat_names = list(categories.keys())
 
@@ -183,23 +240,17 @@ def add_cumulative_trp_constraints(
         for m in months:
             comp_trp_m = int(_get_competitor_trp(categories, competitors, c, m))
 
-            if m == months[0]:
-                # Первый месяц: ctrp = tau если y=1, иначе 0
-                model.Add(v["ctrp"][c][m] == v["tau"][c][m]).OnlyEnforceIf(v["y"][c][m])
-                model.Add(v["ctrp"][c][m] == 0).OnlyEnforceIf(v["y"][c][m].Not())
-                model.Add(v["ctrp_comp"][c][m] == comp_trp_m).OnlyEnforceIf(v["y"][c][m])
-                model.Add(v["ctrp_comp"][c][m] == 0).OnlyEnforceIf(v["y"][c][m].Not())
-            else:
-                # y=0: ctrp = 0
-                model.Add(v["ctrp"][c][m] == 0).OnlyEnforceIf(v["y"][c][m].Not())
-                model.Add(v["ctrp_comp"][c][m] == 0).OnlyEnforceIf(v["y"][c][m].Not())
+            # y=0: ctrp = 0
+            model.Add(v["ctrp"][c][m] == 0).OnlyEnforceIf(v["y"][c][m].Not())
+            model.Add(v["ctrp_comp"][c][m] == 0).OnlyEnforceIf(v["y"][c][m].Not())
 
-                # s=1 (старт): ctrp = tau
-                model.Add(v["ctrp"][c][m] == v["tau"][c][m]).OnlyEnforceIf(v["s"][c][m])
-                model.Add(v["ctrp_comp"][c][m] == comp_trp_m).OnlyEnforceIf(v["s"][c][m])
+            # s=1 (старт новой РК): ctrp = tau[m]
+            model.Add(v["ctrp"][c][m] == v["tau"][c][m]).OnlyEnforceIf(v["s"][c][m])
+            model.Add(v["ctrp_comp"][c][m] == comp_trp_m).OnlyEnforceIf(v["s"][c][m])
 
+            if m > months[0]:
                 # Продолжение (y=1, s=0): ctrp = ctrp[m-1] + tau[m]
-                cont = model.NewBoolVar(f"cont_{c}_{m}")
+                cont = model.NewBoolVar(f"cont_trp_{c}_{m}")
                 model.AddBoolAnd([v["y"][c][m], v["s"][c][m].Not()]).OnlyEnforceIf(cont)
                 model.AddBoolOr([v["y"][c][m].Not(), v["s"][c][m]]).OnlyEnforceIf(cont.Not())
 

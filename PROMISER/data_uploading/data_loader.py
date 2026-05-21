@@ -18,7 +18,7 @@ from PROMISER.data_uploading.table_parser import GoogleSheetsParser
 # ---------------------------------------------------------------------------
 # Историческая таблица флайтов
 # ---------------------------------------------------------------------------
-def load_history_df(parser: GoogleSheetsParser, list_name = 'results') -> pd.DataFrame:
+def load_history_df(parser: GoogleSheetsParser, list_name = 'results_cut') -> pd.DataFrame:
     """Возвращает таблицу с фактом по историческим РК.
 
     Слитая таблица из двух листов:

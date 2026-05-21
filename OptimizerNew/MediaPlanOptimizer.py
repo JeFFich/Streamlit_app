@@ -157,21 +157,19 @@ class MediaPlanOptimizer:
         campaigns = []
 
         for c in self.categories:
-            active_months = []
+            # Определяем TRP по месяцам
             trp_by_month = {}
-
             for m in self.months:
                 if self.solver.Value(self.v["y"][c][m]) == 1:
-                    active_months.append(m)
                     for t in self.trp_levels:
                         if self.solver.Value(self.v["x"][c][m][t]) == 1:
                             trp_by_month[m] = t
                             break
 
-            if not active_months:
-                continue
+            # Разбиваем на РК по стартам и концам
+            campaign_periods = self._split_into_campaigns_by_se(c)
 
-            for start, end in self._split_into_campaigns(active_months):
+            for start, end in campaign_periods:
                 campaigns.append(self._compute_campaign_info(c, start, end, trp_by_month))
 
         if not campaigns:
@@ -183,18 +181,28 @@ class MediaPlanOptimizer:
 
         return pd.DataFrame(campaigns)
 
-    def _split_into_campaigns(self, active_months: List[int]) -> List[Tuple[int, int]]:
-        if not active_months:
-            return []
+    def _split_into_campaigns_by_se(self, category: str) -> List[Tuple[int, int]]:
+        """
+        Разбивает активные месяцы на отдельные РК, используя переменные s (старт) и e (конец).
+        Корректно обрабатывает две РК подряд без перерыва.
+
+        :param category: Название категории.
+        :return: Список кортежей (start_month, end_month).
+        """
         campaigns = []
-        start = prev = active_months[0]
-        for m in active_months[1:]:
-            if m == prev + 1:
-                prev = m
-            else:
-                campaigns.append((start, prev))
-                start = prev = m
-        campaigns.append((start, prev))
+        current_start = None
+
+        for m in self.months:
+            # Если в этом месяце старт — начинаем новую РК
+            if self.solver.Value(self.v["s"][category][m]) == 1:
+                current_start = m
+
+            # Если в этом месяце конец — фиксируем РК
+            if self.solver.Value(self.v["e"][category][m]) == 1:
+                if current_start is not None:
+                    campaigns.append((current_start, m))
+                    current_start = None
+
         return campaigns
 
     def _compute_exact_budget(self, category: str, start_month: int, end_month: int,

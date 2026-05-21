@@ -1,9 +1,11 @@
 import streamlit as st
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Any
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import pandas as pd
 
 from CategoryWidgetGroup import CategoryWidgetGroup, ValidationError
-from data_parser import load_google_sheets, get_competitor_categories, get_target_audiences, transform_trp_comp_info, get_promiser_forecasts, transform_trp_cost_info, get_trp_categories_by_vertical
+from data_parser import load_google_sheets, get_competitor_categories, get_target_audiences, transform_trp_comp_info, get_promiser_forecasts, transform_trp_cost_info, get_trp_categories_by_vertical, save_config_to_sheets, load_config_from_sheets_raw
 from configs import *
 from OptimizerNew.MediaPlanOptimizer import MediaPlanOptimizer
 from Output import create_media_plan_google_sheet, create_media_plan_chart
@@ -47,34 +49,10 @@ def _handle_sheets_url_change():
         
         categories_by_vertical = get_trp_categories_by_vertical(trp_df)
         st.session_state["categories"] = categories_by_vertical
-
-        # Сбрасываем выбранные значения «Категория конкурентов» и «Целевая аудитория» у всех категорий
-        _reset_all_competitor_selections()
-        _reset_all_target_audience_selections()
     else:
         st.session_state["competitor_categories"] = []
         st.session_state["target_audiences"] = []
         st.session_state["categories"] = {}
-
-def _reset_all_competitor_selections():
-    """
-    Внутрення функция сброса значений виджета «Категория конкурентов» у всех категорий.
-    
-    Срабатывает при изменении ссылки на табличку с TRP
-    """
-    for key in list(st.session_state.keys()):
-        if key.endswith("_competitor_category"):
-            st.session_state[key] = None
-
-def _reset_all_target_audience_selections():
-    """
-    Внутренняя функция сброса значений виджета «Целевая аудитория» у всех категорий
-    
-    Срабатывает при изменении ссылки на табличку с TRP 
-    """
-    for key in list(st.session_state.keys()):
-        if key.endswith("_target_audience"):
-            st.session_state[key] = None
 
 # ==============================================================================
 # Управление состоянием
@@ -180,18 +158,28 @@ def render_vertical_widgets(vertical_idx: int):
     
     # Функция для генерации ключей виджетов
     vk = lambda name: _vertical_widget_key(vertical_idx, name)
+    
+    # Инициализируем дефолты ТОЛЬКО если ключа ещё нет
+    if vk("max_budget") not in st.session_state:
+        st.session_state[vk("max_budget")] = DEF_VERT_BUDG
+    if vk("min_trp") not in st.session_state:
+        st.session_state[vk("min_trp")] = DEF_VERT_TRP
+    if vk("min_campaigns") not in st.session_state:
+        st.session_state[vk("min_campaigns")] = DEF_VERT_RK_MIN
+    if vk("max_campaigns") not in st.session_state:
+        st.session_state[vk("max_campaigns")] = DEF_VERT_RK_MAX 
 
     col1, col2 = st.columns(2)
     with col1:
         st.number_input(
             "Максимальный cуммарный бюджет на вертикаль (млн. руб.)",
-            min_value=MIN_VERT_BUDG, max_value=MAX_VERT_BUDG, value=DEF_VERT_BUDG, step=STEP_VERT_BUDG,
+            min_value=MIN_VERT_BUDG, max_value=MAX_VERT_BUDG, step=STEP_VERT_BUDG,
             key=vk("max_budget")
         )
     with col2:
         st.number_input(
             "Минимальный суммарный TRP на вертикаль",
-            min_value=MIN_VERT_TRP, max_value=MAX_VERT_TRP, value=DEF_VERT_TRP, step=STEP_VERT_TRP,
+            min_value=MIN_VERT_TRP, max_value=MAX_VERT_TRP, step=STEP_VERT_TRP,
             key=vk("min_trp"),
         )
         
@@ -199,13 +187,13 @@ def render_vertical_widgets(vertical_idx: int):
     with col3:
         st.number_input(
             "Минимальное число РК в вертикали",
-            min_value=MIN_VERT_RK_MIN, max_value=MAX_VERT_RK_MIN, value=DEF_VERT_RK_MIN, step=STEP_VERT_RK_MAX,
+            min_value=MIN_VERT_RK_MIN, max_value=MAX_VERT_RK_MIN, step=STEP_VERT_RK_MAX,
             key=vk("min_campaigns")
         )
     with col4:
         st.number_input(
             "Максимальное число РК в вертикали",
-            min_value=MIN_VERT_RK_MAX, max_value=MAX_VERT_RK_MAX, value=DEF_VERT_RK_MAX, step=STEP_VERT_RK_MAX,
+            min_value=MIN_VERT_RK_MAX, max_value=MAX_VERT_RK_MAX, step=STEP_VERT_RK_MAX,
             key=vk("max_campaigns")
         )
 
@@ -425,6 +413,200 @@ def render_vertical(vertical_idx: int, vertical: str) -> List[Tuple[int, List[Va
     return all_tab_errors
 
 # ==============================================================================
+#  Полный сбор и восстановление состояния
+# ==============================================================================
+
+def _collect_full_state() -> Dict[str, Any]:
+    """
+    Собирает ВСЕ параметры приложения в один словарь.
+    """
+    
+    num_to_month = {
+        1: 'Январь', 2: 'Февраль', 3: 'Март',
+        4: 'Апрель', 5: 'Май', 6: 'Июнь',
+        7: 'Июль', 8: 'Август', 9: 'Сентябрь',
+        10: 'Октябрь', 11: 'Ноябрь', 12: 'Декабрь'
+    }
+    
+    state = {
+        "saved_at": datetime.now(ZoneInfo('Europe/Moscow')).isoformat(),
+        "google_sheets_url": st.session_state.get("google_sheets_url", ""),
+        "revenue_correction": st.session_state.get("revenue_correction", False),
+        "drive_upload": st.session_state.get("drive_upload", False),
+        "verticals": {}
+    }
+
+    for v_idx, v_name in enumerate(LOGICAL_CATEGORIES.keys()):
+        vk = lambda name: _vertical_widget_key(v_idx, name)
+        vertical_data = {
+            "max_budget": st.session_state.get(vk("max_budget"), 300),
+            "min_trp": st.session_state.get(vk("min_trp"), 6000),
+            "min_campaigns": st.session_state.get(vk("min_campaigns"), 2),
+            "max_campaigns": st.session_state.get(vk("max_campaigns"), 4),
+            "categories": [],
+        }
+
+        # Категории
+        group_ids = st.session_state.get(_state_key(v_idx), [])
+        registry = st.session_state.get("groups_registry", {})
+
+        for gid in group_ids:
+            group = registry.get(gid)
+            if group:
+                cat_data = group.get_values()
+                cat_data["default_romi"] *= 100
+                cat_data["min_budget"] /= 1_000_000
+                cat_data["max_budget"] /= 1_000_000
+                cat_data["start_months"] = [num_to_month[month] for month in cat_data["start_months"]]
+                
+                # Добавляем метаинформацию о пресете
+                meta = st.session_state.get("group_meta", {}).get(gid, {})
+                preset = meta.get("preset")
+                cat_data["preset_name"] = preset['category_name'] if preset else None
+                cat_data["input_mode"] = st.session_state.get(
+                    f"cat_group_{gid}_name_input_mode", "✏️ Вручную"
+                )
+                vertical_data["categories"].append(cat_data)
+
+        state["verticals"][v_name] = vertical_data
+
+    return state
+
+def _restore_full_state(state: Dict[str, Any]):
+    """
+    Восстанавливает состояние приложения из сохранённого словаря.
+    """
+    
+    st.session_state["_last_saved_at"] = state["saved_at"]
+    
+    # URL таблицы
+    if state.get("google_sheets_url"):
+        st.session_state["google_sheets_url"] = state["google_sheets_url"]
+        _handle_sheets_url_change()
+
+    # Коррекция
+    st.session_state["revenue_correction"] = state.get("revenue_correction", False)
+    st.session_state["drive_upload"] = state.get("drive_upload", False)
+
+    # Вертикали
+    for v_idx, v_name in enumerate(LOGICAL_CATEGORIES.keys()):
+        vk = lambda name, vi=v_idx: _vertical_widget_key(vi, name)
+        vert_data = state.get("verticals", {}).get(v_name, {})
+
+        if not vert_data:
+            continue
+
+        # Параметры вертикали
+        st.session_state[vk("max_budget")] = vert_data.get("max_budget", 300)
+        st.session_state[vk("min_trp")] = vert_data.get("min_trp", 6000)
+        st.session_state[vk("min_campaigns")] = vert_data.get("min_campaigns", 2)
+        st.session_state[vk("max_campaigns")] = vert_data.get("max_campaigns", 4)
+
+        # Категории
+        categories = vert_data.get("categories", [])
+        # Очищаем текущие группы вертикали
+        st.session_state[_state_key(v_idx)] = []
+        st.session_state[_counter_key(v_idx)] = 0
+
+        for cat_data in categories:
+            # Определяем пресет
+            preset_name = cat_data.get("preset_name")
+            preset = None
+            if preset_name:
+                presets = PRESETS_BY_VERTICAL.get(v_name, [])
+                preset = next((p for p in presets if p["category_name"] == preset_name), None)
+
+            # Добавляем группу
+            _add_group(v_idx, preset)
+            gid = st.session_state[_state_key(v_idx)][-1]  # последний добавленный id
+            prefix = f"{v_name}_cat_group_{gid}"
+
+            # Восстанавливаем значения виджетов
+            st.session_state[f"{prefix}_name"] = cat_data.get("name", "")
+            st.session_state[f"{prefix}_name_manual"] = cat_data.get("name", "")
+            st.session_state[f"{prefix}_name_input_mode"] = cat_data.get(
+                "input_mode", "✏️ Вручную"
+            )
+            st.session_state[f"{prefix}_incoming_categories"] = cat_data.get(
+                "logical_category", []
+            )
+            st.session_state[f"{prefix}_min_trp"] = cat_data.get("min_trp", 1500)
+            st.session_state[f"{prefix}_min_sov"] = cat_data.get("min_sov", 0.13)
+            st.session_state[f"{prefix}_default_romi"] = cat_data.get("default_romi", -90)
+            st.session_state[f"{prefix}_chrono"] = cat_data.get("chrono", None)
+            st.session_state[f"{prefix}_target_audience"] = cat_data.get(
+                "target_audience", None
+            )
+            st.session_state[f"{prefix}_competitor_category"] = cat_data.get(
+                "competitor_category", None
+            )
+            st.session_state[f"{prefix}_min_campaigns"] = cat_data.get("min_campaigns", 1)
+            st.session_state[f"{prefix}_max_campaigns"] = cat_data.get("max_campaigns", 2)
+            st.session_state[f"{prefix}_min_budget"] = cat_data.get(
+                "min_budget", 100_000_000
+            )
+            st.session_state[f"{prefix}_max_budget"] = cat_data.get(
+                "max_budget", 500_000_000
+            )
+            st.session_state[f"{prefix}_min_duration"] = cat_data.get("min_duration", 1)
+            st.session_state[f"{prefix}_max_duration"] = cat_data.get("max_duration", 2)
+            st.session_state[f"{prefix}_mandatory_months"] = cat_data.get(
+                "start_months", []
+            )
+            st.session_state[f"{prefix}_only_mandatory_months"] = cat_data.get(
+                "strict_start", False
+            )
+            
+def render_config_management():
+    """Отрисовывает блок управления конфигурацией в сайдбаре."""
+    with st.sidebar:
+        st.divider()
+        st.subheader("💾 Управление конфигурацией")
+
+        st.text_input(
+            "👤 Ваш идентификатор",
+            key="current_user_id",
+            placeholder="например: тег MM (без @)",
+            help="Используется для сохранения и загрузки настроек",
+        )
+        
+        user_id = st.session_state.get("current_user_id", False)
+
+        if not user_id:
+            st.warning("Введите идентификатор пользователя выше.")
+            return
+
+        st.caption(f"Пользователь: **{user_id}**")
+
+        col_save, col_load = st.columns(2)
+
+        with col_save:
+            save_clicked = st.button("💾 Сохранить", use_container_width=True, key="save_config")
+        with col_load:
+            save_loaded = st.button("📂 Загрузить", use_container_width=True, key="load_config")
+
+        if save_clicked:
+            save_config_to_sheets(user_id, _collect_full_state())
+            
+        if save_loaded:
+            config = load_config_from_sheets_raw(user_id)
+                
+            if config:
+                _restore_full_state(config)
+                st.session_state["config_status"] = True
+                st.rerun()  # перерисовать с новым состоянием
+                
+        config_status = st.session_state.get("config_status", False)
+        if config_status:
+            st.success(f"✅ Загружено")
+            del st.session_state["config_status"]
+        
+        # Информация о последнем сохранении
+        last_state = st.session_state.get("_last_saved_at")
+        if last_state:
+            st.caption(f"Последнее сохранение: {last_state}")
+
+# ==============================================================================
 # Точка входа
 # ==============================================================================
 
@@ -463,6 +645,8 @@ def main():
     st.set_page_config(page_title="Медиапланирование", layout="wide")
     st.title("Построение оптимального медиаплана")
     
+    render_config_management()
+    
     # ---- Общий виджет с ссылкой на гугл-таблицу + кнопка обновления ----
     
     col_1, col_2 = st.columns([4, 1], vertical_alignment="bottom")
@@ -495,10 +679,6 @@ def main():
         st.error(f"❌ {sheets_error}")
     elif sheets_success:
         st.success("✅ Таблица успешно загружена!")
-        # competitor_cats = st.session_state.get("competitor_categories", [])
-        # if competitor_cats:
-        #     st.caption(f"Найдено категорий конкурентов: {len(competitor_cats)} — {', '.join(competitor_cats[:5])}{'...' if len(competitor_cats) > 5 else ''}")
-        #     st.dataframe(st.session_state.get("competitors_trp_df"))
 
     st.divider()
 

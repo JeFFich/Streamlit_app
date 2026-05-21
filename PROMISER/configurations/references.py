@@ -11,6 +11,8 @@ CLOSEST_START_RK: dict[str, list[str]] = {
     "CC-Test": [
         "Avito_Goods_gc-24-01-02-TRX-Buyer-Protection-T1-C2C",
         "Avito_Goods_gc-24-09-AvitoMall+T&S-T1",
+        "Avito_Goods_gc-25-12-CC-New-Year-SALE-T1-2C",
+        "Avito_Goods_gс-25-11-CC-November-BIG-SALE-T1-2C",
         "Avito_Goods_gc-26-03-CC-Resale-T1-C2C"
     ],
     "HL-Construction": [
@@ -79,6 +81,11 @@ CLOSEST_START_RK: dict[str, list[str]] = {
     ],
     "LTR": [
         "Avito_RE_re-24-08-LTR-авг-сент-T1-С2С",
+        "Avito_RE_re-24-01-ND_SS-RRE_янв-апр-T1-С2С",
+        "Avito_RE_ re-24-09-RRE_сент-ноя-T1-С2С",
+        "Avito_RE_re-25-01-RRE_янв-март-T1-С2С",
+        "Avito_RE_re-25-08-RRE_авг-ноя-T1-С2С",
+        "Avito_RE_re-26-01-RRE_янв-мар-T1-С2С"
     ],
     "Appliances": [
         "Avito_Services_se_24-03-CROSS_MR&AP-T1-С2С",
@@ -104,6 +111,10 @@ CLOSEST_START_RK: dict[str, list[str]] = {
     "Cars": [
         "Avito_Auto_au-24-03-UCB-Buyers-T1-C2C",
         "Avito_Auto_au-24-09-SL-Select-T1-C2C",
+        "Avito_Auto_au-25-09-Autoteka promo-T1-C2C",
+        "Avito_Auto_au-25-03-UCB-T1-C2C",
+        "Avito_Auto_au-25-07-Autoteka-T1-C2C",
+        "Avito_Auto_au-25-05-UCB-T1-C2C"
     ],
     "Sellers": [
         "Avito_Goods_gc-25-07-Sellers-cross-private-T1-B2C"

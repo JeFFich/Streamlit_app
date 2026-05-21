@@ -4,6 +4,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 import pandas as pd
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, List
 import streamlit as st
 
@@ -923,7 +924,7 @@ def create_media_plan_google_sheet(
     gc = gspread.authorize(creds)
 
     # Генерируем название таблицы
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = datetime.now(ZoneInfo('Europe/Moscow')).strftime("%Y-%m-%d_%H-%M-%S")
     sheet_title = f"Медиаплан_флоучарт_скорректированный_{timestamp}" if not show_revenue else f"Медиаплан_флоучарт_{timestamp}"
 
     # Создаём таблицу в указанной папке

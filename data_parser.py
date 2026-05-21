@@ -1,10 +1,12 @@
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 import pandas as pd
 import pickle
+import json
+import streamlit as st
 
 from PROMISER.data_uploading.table_parser import GoogleSheetsParser
 from PROMISER.slim_promiser import SlimPromiser
-from configs import LOGICAL_CATEGORIES
+from configs import LOGICAL_CATEGORIES, CONFIG_SHEET_ID
 
 
 # ==============================================================================
@@ -236,3 +238,97 @@ def get_promiser_forecasts(
         parsed_data[categ][int(month)] = values
         
     return parsed_data
+
+# ==============================================================================
+# Считывание/запись инфы про состояния параметров
+# ==============================================================================
+
+def save_config_to_sheets(user_id: str, state: Dict[str, Any]):
+    """Сохраняет конфигурацию пользователя в Google Sheets"""
+    
+    if not user_id:
+        st.error("Укажите идентификатор пользователя.")
+        return
+    
+    json_str = json.dumps(state, ensure_ascii=False, indent=2)
+
+    try:
+        parser = GoogleSheetsParser()
+        service = parser.sheets_service
+
+        # Безопасное имя листа (email может содержать спецсимволы)
+        sheet_name = user_id.replace("@", "_at_").replace(".", "_")[:50]
+
+        # Пытаемся создать лист (если не существует — создаём)
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=CONFIG_SHEET_ID,
+                body={
+                    "requests": [
+                        {
+                            "addSheet": {
+                                "properties": {"title": sheet_name}
+                            }
+                        }
+                    ]
+                },
+            ).execute()
+        except Exception:
+            pass  # лист уже существует — ок
+
+        # Очищаем лист
+        service.spreadsheets().values().clear(
+            spreadsheetId=CONFIG_SHEET_ID,
+            range=sheet_name,
+        ).execute()
+
+        # Записываем JSON построчно (каждая строка — одна строка JSON)
+        lines = json_str.split("\n")
+        body = {"values": [[line] for line in lines]}
+
+        service.spreadsheets().values().update(
+            spreadsheetId=CONFIG_SHEET_ID,
+            range=f"{sheet_name}!A1",
+            valueInputOption="RAW",
+            body=body,
+        ).execute()
+
+        st.success(f"✅ Cохранено для пользователя «{user_id}»")
+        st.session_state["_last_saved_at"] = state["saved_at"]
+
+    except Exception as e:
+        st.error(f"❌ Ошибка сохранения: {e}")
+        
+def load_config_from_sheets_raw(user_id: str) -> Optional[Dict[str, Any]]:
+    """Загружает конфигурацию напрямую через Sheets API"""
+    
+    if not user_id:
+        st.error("Укажите идентификатор пользователя.")
+        return None
+
+    try:
+        parser = GoogleSheetsParser()
+        service = parser.sheets_service
+        sheet_name = user_id.replace("@", "_at_").replace(".", "_")[:50]
+
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=CONFIG_SHEET_ID, range=sheet_name)
+            .execute()
+        )
+        rows = result.get("values", [])
+
+        if not rows:
+            st.warning("Сохранённая конфигурация пуста.")
+            return None
+
+        json_str = "\n".join(row[0] for row in rows if row)
+        return json.loads(json_str)
+
+    except json.JSONDecodeError as e:
+        st.error(f"❌ Ошибка парсинга: {e}")
+        return None
+    except Exception as e:
+        st.error(f"❌ Конфигурация для «{user_id}» не найдена: {e}")
+        return None

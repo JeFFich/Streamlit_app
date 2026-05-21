@@ -44,20 +44,28 @@ def _add_duration_constraints(
         max_dur = info["max_duration"]
 
         for m in months:
-            # Минимальная продолжительность
+            # --- Минимальная продолжительность ---
+            # Если старт в m, то y[m+d]=1 для d=0..min_dur-1
             for d in range(min_dur):
                 if m + d <= max(months):
                     model.AddImplication(v["s"][c][m], v["y"][c][m + d])
 
-            # Запрет позднего старта
+            # --- Запрет позднего старта ---
             if m + min_dur - 1 > max(months):
                 model.Add(v["s"][c][m] == 0)
 
-            # Максимальная продолжительность
-            end_window = min(m + max_dur, max(months))
-            window = list(range(m, end_window + 1))
-            if len(window) > max_dur:
-                model.Add(sum(v["y"][c][mp] for mp in window) <= max_dur)
+            # --- Максимальная продолжительность ---
+            # Если старт в m, то e[m'] = 1 для какого-то m' в [m, m+max_dur-1]
+            # Эквивалентно: если старт в m, то в пределах max_dur месяцев РК закончится
+            # s[m]=1 → e[m] + e[m+1] + ... + e[m+max_dur-1] >= 1
+            end_candidates = [
+                v["e"][c][m + d] 
+                for d in range(max_dur) 
+                if m + d <= max(months)
+            ]
+            if end_candidates:
+                # Если старт в m → хотя бы один конец в окне [m, m+max_dur-1]
+                model.Add(sum(end_candidates) >= 1).OnlyEnforceIf(v["s"][c][m])
 
 def _add_vertical_budget_constraints(
     model: cp_model.CpModel, 
