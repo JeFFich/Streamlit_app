@@ -587,6 +587,153 @@ def _format_vertical_sheet(
     # Выполняем форматирование
     worksheet.spreadsheet.batch_update({'requests': requests})
 
+def _fill_detail_sheet(
+    worksheet: gspread.Worksheet,
+    plan_df: pd.DataFrame,
+    show_revenue: bool = True
+):
+    """
+    Заполняет лист с полной таблицей всех РК в плане.
+    """
+    all_cells = []
+
+    # Заголовок
+    all_cells.append({'range': 'A1', 'values': [['Полная таблица c РК в плане']]})
+
+    # Шапка
+    if show_revenue:
+        header = ['Вертикаль', 'Категория', 'Месяц старта', 'Месяц конца', 'Суммарный TRP', 'SOV', 
+                  'Бюджет (в млн. руб.)', 'DTB', 'Выручки (в млн. руб.)', 'ROMI']
+    else:
+        header = ['Вертикаль', 'Категория', 'Месяц старта', 'Месяц конца', 'Суммарный TRP', 'SOV', 
+                  'Бюджет (в млн. руб.)', 'DTB', 'ROMI']
+    all_cells.append({'range': 'A3', 'values': [header]})
+
+    # Данные
+    month_labels = [
+        'Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн',
+        'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'
+    ]
+
+    rows = []
+    for _, row in plan_df.iterrows():
+        start_label = month_labels[int(row['start_month']) - 1]
+        end_label = month_labels[int(row['end_month']) - 1]
+
+        if show_revenue:
+            data_row = [
+                row['vertical'],
+                row['category'],
+                start_label,
+                end_label,
+                f"{row['total_trp']:.0f}".replace(",", " "),
+                f"{row['sov']:.0%}",
+                f"{row['budget'] / 1_000_000:,.0f} М".replace(",", " "),
+                f"{row['dtb']:,.0f}".replace(",", " "),
+                f"{row['revenue'] / 1_000_000:,.0f} М".replace(",", " "),
+                f"{row['romi']:.0%}"
+            ]
+        else:
+            data_row = [
+                row['vertical'],
+                row['category'],
+                start_label,
+                end_label,
+                f"{row['total_trp']:.0f}".replace(",", " "),
+                f"{row['sov']:.0%}",
+                f"{row['budget'] * BUDGET_COEFF_CORRECTRION / 1_000_000:,.0f} М".replace(",", " "),
+                f"{row['dtb']:,.0f}".replace(",", " "),
+                f"{row['romi']:.0%}"
+            ]
+        rows.append(data_row)
+
+    all_cells.append({'range': 'A4', 'values': rows})
+
+    # Записываем данные
+    worksheet.batch_update(all_cells, value_input_option='RAW')
+
+    # Форматирование
+    _format_detail_sheet(worksheet, len(rows), len(header))
+
+
+def _format_detail_sheet(
+    worksheet: gspread.Worksheet,
+    num_rows: int,
+    num_cols: int
+):
+    """Форматирование листа с полной таблицей РК."""
+    sheet_id = worksheet.id
+    requests = []
+
+    # Заголовок — жирный, крупный
+    requests.append({
+        'repeatCell': {
+            'range': {
+                'sheetId': sheet_id,
+                'startRowIndex': 0, 'endRowIndex': 1,
+                'startColumnIndex': 0, 'endColumnIndex': num_cols
+            },
+            'cell': {
+                'userEnteredFormat': {
+                    'textFormat': {'bold': True, 'fontSize': 14}
+                }
+            },
+            'fields': 'userEnteredFormat.textFormat'
+        }
+    })
+
+    # Шапка — жирный, серый фон
+    requests.append({
+        'repeatCell': {
+            'range': {
+                'sheetId': sheet_id,
+                'startRowIndex': 2, 'endRowIndex': 3,
+                'startColumnIndex': 0, 'endColumnIndex': num_cols
+            },
+            'cell': {
+                'userEnteredFormat': {
+                    'textFormat': {'bold': True, 'fontSize': 10},
+                    'backgroundColor': {'red': 0.92, 'green': 0.92, 'blue': 0.92},
+                    'horizontalAlignment': 'CENTER'
+                }
+            },
+            'fields': 'userEnteredFormat(textFormat,backgroundColor,horizontalAlignment)'
+        }
+    })
+
+    # Границы таблицы
+    requests.append({
+        'updateBorders': {
+            'range': {
+                'sheetId': sheet_id,
+                'startRowIndex': 2,
+                'endRowIndex': 3 + num_rows,
+                'startColumnIndex': 0,
+                'endColumnIndex': num_cols
+            },
+            'top': {'style': 'SOLID', 'color': {'red': 0.7, 'green': 0.7, 'blue': 0.7}},
+            'bottom': {'style': 'SOLID', 'color': {'red': 0.7, 'green': 0.7, 'blue': 0.7}},
+            'left': {'style': 'SOLID', 'color': {'red': 0.7, 'green': 0.7, 'blue': 0.7}},
+            'right': {'style': 'SOLID', 'color': {'red': 0.7, 'green': 0.7, 'blue': 0.7}},
+            'innerHorizontal': {'style': 'SOLID', 'color': {'red': 0.85, 'green': 0.85, 'blue': 0.85}},
+            'innerVertical': {'style': 'SOLID', 'color': {'red': 0.85, 'green': 0.85, 'blue': 0.85}},
+        }
+    })
+
+    # Автоширина
+    requests.append({
+        'autoResizeDimensions': {
+            'dimensions': {
+                'sheetId': sheet_id,
+                'dimension': 'COLUMNS',
+                'startIndex': 0,
+                'endIndex': num_cols
+            }
+        }
+    })
+
+    worksheet.spreadsheet.batch_update({'requests': requests})
+
 def _fill_summary_sheet(worksheet: gspread.Worksheet, plan_df: pd.DataFrame, show_revenue: bool = True):
     """
     Заполняет сводный лист с агрегированной информацией.
@@ -887,8 +1034,6 @@ def create_media_plan_google_sheet(
     plan_df: pd.DataFrame,
     show_revenue: bool = False,
     folder_id: str = "1M_--Ju2b6tN4gwb3MEkiqbIpaWtcyN6c",
-    credentials_filename: str = "./PROMISER/configurations/credentials.json",
-    token_filename: str = "./PROMISER/configurations/token.json",
 ) -> str:
     """
     Создаёт Google-таблицу с флоучартом медиаплана.
@@ -899,8 +1044,6 @@ def create_media_plan_google_sheet(
             total_trp, sov, budget, dtb, revenue, romi
         show_revenue: Была ли проведена корректировка плана (для отдачи RoRe)
         folder_id: ID папки на Google Drive.
-        credentials_filename: Путь к credentials.json.
-        token_filename: Путь к token.json.
 
     Returns:
         URL созданной таблицы.
@@ -949,6 +1092,19 @@ def create_media_plan_google_sheet(
             )
 
         _fill_vertical_sheet(worksheet, v_df, vertical, show_revenue=show_revenue)
+
+    # Создаем полную таблицу всех РК и скрываем ее по умолчанию
+    detail_ws = spreadsheet.add_worksheet(title="Все РК", rows=100, cols=15)
+    _fill_detail_sheet(detail_ws, plan_df, show_revenue)
+    spreadsheet.batch_update({'requests': [{
+        'updateSheetProperties': {
+            'properties': {
+                'sheetId': detail_ws.id,
+                'hidden': True
+            },
+            'fields': 'hidden'
+        }
+    }]})
 
     # Создаём сводный лист
     summary_ws = spreadsheet.add_worksheet(title="Сводка", rows=100, cols=15)
