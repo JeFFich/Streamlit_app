@@ -655,7 +655,6 @@ def _fill_detail_sheet(
     # Форматирование
     _format_detail_sheet(worksheet, len(rows), len(header))
 
-
 def _format_detail_sheet(
     worksheet: gspread.Worksheet,
     num_rows: int,
@@ -1033,7 +1032,7 @@ def _get_category_color_rgb(category_idx: int) -> Dict[str, float]:
 def create_media_plan_google_sheet(
     plan_df: pd.DataFrame,
     show_revenue: bool = False,
-    folder_id: str = "1M_--Ju2b6tN4gwb3MEkiqbIpaWtcyN6c",
+    folder_id: str = "1J2k-MmLJc0Vrkjt2_RE8K6MpLNsVzbKD",
 ) -> str:
     """
     Создаёт Google-таблицу с флоучартом медиаплана.

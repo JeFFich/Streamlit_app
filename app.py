@@ -8,6 +8,8 @@ from CategoryWidgetGroup import CategoryWidgetGroup, ValidationError
 from data_parser import load_google_sheets, get_competitor_categories, get_target_audiences, transform_trp_comp_info, get_promiser_forecasts, transform_trp_cost_info, get_trp_categories_by_vertical, save_config_to_sheets, load_config_from_sheets_raw
 from configs import *
 from OptimizerNew.MediaPlanOptimizer import MediaPlanOptimizer
+from PlanAnalyzer.MediaPlanAnalyzer import MediaPlanAnalyzer
+from PlanAnalyzer.AnalyserOutput import create_analysis_plotly_view, create_analysis_google_sheet
 from Output import create_media_plan_google_sheet, create_media_plan_chart
 
 
@@ -605,6 +607,42 @@ def render_config_management():
         last_state = st.session_state.get("_last_saved_at")
         if last_state:
             st.caption(f"Последнее сохранение: {last_state}")
+            
+def prepare_data():
+    """
+    Внутрення функция для подготовки данных для оптимизатора/калькулятора
+    """
+    
+    registry: Dict[int, CategoryWidgetGroup] = st.session_state["groups_registry"]
+    
+    # Словари по вертикалям и категориям 
+    category_dict = {}
+    vertical_dict = {}
+    for vertical_idx, vertical in enumerate(LOGICAL_CATEGORIES.keys()):
+        vk = lambda name: _vertical_widget_key(vertical_idx, name)
+        vertical_dict[vertical] = {
+            'max_budget': st.session_state.get(vk("max_budget"), 300) * 1_000_000,
+            'min_total_trp': st.session_state.get(vk("min_trp"), 6000),
+            'min_campaigns': st.session_state.get(vk("min_campaigns"), 2),
+            'max_campaigns': st.session_state.get(vk("max_campaigns"), 4)
+        }
+        
+        groups = st.session_state.get(_state_key(vertical_idx), [])
+        if groups:
+            for group_id in groups:
+                category = registry[group_id].get_values()
+                category_dict[category["name"]] = category
+        else:
+            vertical_dict.pop(vertical)
+    
+    # Словари по TRP
+    trp_cost_dict = transform_trp_cost_info(st.session_state.get("trp_cost_df"), category_dict)
+    competitors_dict = transform_trp_comp_info(st.session_state.get("competitors_trp_df"))
+
+    # Прогнозы из промисера
+    forecasts = get_promiser_forecasts(category_dict)
+    
+    return category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts
 
 # ==============================================================================
 # Точка входа
@@ -715,91 +753,136 @@ def main():
                 for err in errs:
                     st.markdown(f"- **{vertical_name} → {label}**: {err.message}")
     
-    st.checkbox(
-        "📐 Включить корректировку плана",
-        value=False,
-        key="revenue_correction",
-        help="Если включено, то выручка будет полностью убрана + бюджеты домножатся на 1.3 (в названии листа на гугл-диске будет добавлена пометка «_скорректированный»)"
-    )
-    st.checkbox(
-        "🔺 Создать флоучарт на гугл-диске",
-        value=False,
-        key="drive_upload",
-        help="Если включено, то план продублируется в google-sheets (+ составится сводка по всем категориям, вертикалям и тотал)"
-    )
+    # Варианты режимов работы
+    tab_optimize, tab_evaluate = st.tabs(["Расчёт оптимального плана", "Обсчёт текущего плана"])
     
-    # --- Дальнейший расчет ---
-    if st.button("📊 Рассчитать оптимальный план", type="secondary", disabled=has_errors or not has_any_group):
-        registry: Dict[int, CategoryWidgetGroup] = st.session_state["groups_registry"]
-        apply_correction = not st.session_state.get("revenue_correction", False)
-        upload_to_drive = st.session_state.get("drive_upload", False)
+    with tab_optimize:
+        st.checkbox(
+            "📐 Включить корректировку плана",
+            value=False,
+            key="revenue_correction",
+            help="Если включено, то выручка будет полностью убрана + бюджеты домножатся на 1.3 (в названии листа на гугл-диске будет добавлена пометка «_скорректированный»)"
+        )
+        st.checkbox(
+            "🔺 Создать флоучарт на гугл-диске",
+            value=False,
+            key="drive_upload",
+            help="Если включено, то план продублируется в google-sheets (+ составится сводка по всем категориям, вертикалям и тотал)"
+        )
         
-        # Словари по вертикалям и категориям 
-        category_dict = {}
-        vertical_dict = {}
-        for vertical_idx, vertical in enumerate(LOGICAL_CATEGORIES.keys()):
-            vk = lambda name: _vertical_widget_key(vertical_idx, name)
-            vertical_dict[vertical] = {
-                'max_budget': st.session_state.get(vk("max_budget"), 300) * 1_000_000,
-                'min_total_trp': st.session_state.get(vk("min_trp"), 6000),
-                'min_campaigns': st.session_state.get(vk("min_campaigns"), 2),
-                'max_campaigns': st.session_state.get(vk("max_campaigns"), 4)
-            }
+        # --- Дальнейший расчет ---
+        if st.button("📊 Рассчитать оптимальный план", type="secondary", disabled=has_errors or not has_any_group):
+            apply_correction = not st.session_state.get("revenue_correction", False)
+            upload_to_drive = st.session_state.get("drive_upload", False)
             
-            groups = st.session_state.get(_state_key(vertical_idx), [])
-            if groups:
-                for group_id in groups:
-                    category = registry[group_id].get_values()
-                    category_dict[category["name"]] = category
-            else:
-                vertical_dict.pop(vertical)
-        
-        # Словари по TRP
-        trp_cost_dict = transform_trp_cost_info(st.session_state.get("trp_cost_df"), category_dict)
-        competitors_dict = transform_trp_comp_info(st.session_state.get("competitors_trp_df"))
-
-        # Прогнозы из промисера
-        forecasts = get_promiser_forecasts(category_dict)
-        
-        # st.json(vertical_dict)
-        # st.json(category_dict)
-        # st.json(trp_cost_dict)
-        # st.json(competitors_dict)
-        
-        with st.spinner("⏳ Выполняется расчет плана..."):
-            try:
-                optimizer = MediaPlanOptimizer()
-                optimal_plan = optimizer.optimize(
-                    categories=category_dict,
-                    verticals=vertical_dict,
-                    forecasts=forecasts,
-                    competitors=competitors_dict,
-                    costs=trp_cost_dict
-                )
-                
-                fig = create_media_plan_chart(optimal_plan, show_revenue=apply_correction)
-                if upload_to_drive:
-                    result_sheet_url = create_media_plan_google_sheet(optimal_plan, apply_correction)
-
-                # --- Успех ---
-                st.success("✅ План создан")
-
-                # График Plotly
-                st.subheader("📈 Флоу чарт плана по вертикаля")
-                st.plotly_chart(fig, use_container_width=True)
-
-                # Дополнительно: кнопка-ссылка (более заметная)
-                if upload_to_drive:
-                    st.link_button(
-                        "📄 Перейти к таблице результатов на гугл-диске",
-                        url=result_sheet_url,
-                        use_container_width=True,
+            category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts = prepare_data()
+            
+            # st.json(vertical_dict)
+            # st.json(category_dict)
+            # st.json(trp_cost_dict)
+            # st.json(competitors_dict)
+            
+            with st.spinner("⏳ Выполняется расчет плана..."):
+                try:
+                    optimizer = MediaPlanOptimizer()
+                    optimal_plan = optimizer.optimize(
+                        categories=category_dict,
+                        verticals=vertical_dict,
+                        forecasts=forecasts,
+                        competitors=competitors_dict,
+                        costs=trp_cost_dict
                     )
+                    
+                    fig = create_media_plan_chart(optimal_plan, show_revenue=apply_correction)
+                    if upload_to_drive:
+                        result_sheet_url = create_media_plan_google_sheet(optimal_plan, apply_correction)
 
-            except Exception as e:
-                # --- Ошибка ---
-                st.error(f"❌ Ошибка при выполнении оптимизации: {e}")
+                    # --- Успех ---
+                    st.success("✅ План создан")
 
+                    # График Plotly
+                    st.subheader("📈 Флоу чарт плана по вертикаля")
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    # Дополнительно: кнопка-ссылка (более заметная)
+                    if upload_to_drive:
+                        st.link_button(
+                            "📄 Перейти к таблице результатов на гугл-диске",
+                            url=result_sheet_url,
+                            use_container_width=True,
+                        )
+
+                except Exception as e:
+                    # --- Ошибка ---
+                    st.error(f"❌ Ошибка при выполнении оптимизации: {e}")
+                    
+    with tab_evaluate:
+        st.checkbox(
+            "🔺 Создать флоучарт на гугл-диске",
+            value=False,
+            key="drive_upload_calc",
+            help="Если включено, то сводка продублируется в google-sheets"
+        )
+        
+        uploaded_file = st.file_uploader(
+            "Загрузить план",
+            type=["xlsx", "xls"],
+            key="flowchart_upload",
+            help="Загрузите Excel-файл с флоучартом в требуемом формате",
+        )
+        
+        evaluate_clicked = st.button(
+            "Обсчитать план",
+            disabled=(uploaded_file is None) or has_errors or not has_any_group,
+            type="secondary",
+            use_container_width=True,
+            key="evaluate_run",
+        )
+
+        if evaluate_clicked and uploaded_file is not None:
+            with st.spinner("⏳ Выполняется обсчет плана..."):
+                try:
+                    upload_to_drive = st.session_state.get("drive_upload_calc", False)
+                    category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts = prepare_data()
+                    
+                    analyzer = MediaPlanAnalyzer(
+                        categories=category_dict,
+                        verticals=vertical_dict,
+                        forecasts=forecasts,
+                        competitors=competitors_dict,
+                        costs=trp_cost_dict
+                    )
+                    
+                    #st.json(vertical_dict)
+                    #st.json(category_dict)
+                    #st.json(trp_cost_dict)
+                    #st.json(competitors_dict)
+
+                    output = analyzer.analyze(uploaded_file)
+
+                    fig = create_analysis_plotly_view(*output)
+                    
+                    if upload_to_drive:
+                        result_sheet_url = create_analysis_google_sheet(*output)
+                        
+                    # --- Успех ---
+                    st.success("✅ План успешно обсчитан")
+
+                    # График Plotly
+                    st.subheader("📈 Сводка по плану")
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    # Дополнительно: кнопка-ссылка (более заметная)
+                    if upload_to_drive:
+                        st.link_button(
+                            "📄 Перейти к сводке на гугл-диске",
+                            url=result_sheet_url,
+                            use_container_width=True,
+                        )
+                except Exception as e:
+                    # --- Ошибка ---
+                    st.error(f"❌ Ошибка при выполнении обсчета: {e}")
+                
 if __name__ == "__main__":
     main()
     
