@@ -177,6 +177,7 @@ class MediaPlanAnalyzer:
             "month_start": month_start,
             "month_end": month_end,
             "TRP": round(total_trp),
+            "comp_TRP": round(total_comp_trp),
             "budget": round(total_budget),
             "SOV": round(sov, 2),
             "DTB_pred": round(total_dtb),
@@ -308,6 +309,24 @@ class MediaPlanAnalyzer:
         alpha = (trp - trp_low) / (trp_high - trp_low)
         return val_low + alpha * (val_high - val_low)
     
+    def _compute_vertical_competitors_TRP(self, vertical: str = None) -> float:
+        """
+        Считает суммарный TRP конкурентов для всех категорий вертикали за год (если None - по всем возможным конкурентам)
+        """
+        
+        # Собираем список всех выбранных конкурентов в категориях вертикали
+        comp_set = set()
+        for _, category in self.categories.items():
+            if category["vertical"] == vertical or vertical is None:
+                comp_set.add(category.get("competitor_category", ""))
+                
+        # Находим суммарный TRP у всех конкурентов
+        total_trp = 0
+        for month in range(1, 13):
+            total_trp += sum([self.competitors.get(comp, {}).get(month, 0.0) for comp in comp_set])
+            
+        return total_trp
+    
     def _compute_vertical_summary(self, detail_df: pd.DataFrame) -> pd.DataFrame:
         """
         Формирует сводную таблицу по вертикалям с итоговой строкой.
@@ -327,17 +346,27 @@ class MediaPlanAnalyzer:
         """
         if detail_df.empty:
             return pd.DataFrame(columns=[
-                "vertical", "num_campaigns", "total_trp", "weighted_sov",
+                "vertical", "num_campaigns", "total_trp", "sov_active",
                 "total_budget", "total_dtb", "total_revenue", "romi"
             ])
+            
+        # Общегодовой TRP у конкурентов в вертикали (и по всему авито)
+        vertical_total_comp_trp = {}
+        for vertical in detail_df["vertical"].unique():
+            vertical_total_comp_trp[vertical] = self._compute_vertical_competitors_TRP(vertical)
+        total_comp_trp = self._compute_vertical_competitors_TRP()
 
         # Агрегация по вертикалям
         vert_summary = detail_df.groupby("vertical").apply(
             lambda g: pd.Series({
                 "num_campaigns": len(g),
                 "total_trp": g["TRP"].sum(),
-                "weighted_sov": (
-                    (g["SOV"] * g["TRP"]).sum() / g["TRP"].sum()
+                "sov_active": (
+                    g["TRP"].sum() / (g["TRP"].sum() + g["comp_TRP"].sum())
+                    if g["TRP"].sum() > 0 else 0
+                ),
+                "sov_year": (
+                    g["TRP"].sum() / (g["TRP"].sum() + vertical_total_comp_trp[g.name])
                     if g["TRP"].sum() > 0 else 0
                 ),
                 "total_budget": g["budget"].sum(),
@@ -355,6 +384,7 @@ class MediaPlanAnalyzer:
 
         # Итоговая строка
         total_trp = detail_df["TRP"].sum()
+        comp_trp = detail_df["comp_TRP"].sum()
         total_budget = detail_df["budget"].sum()
         total_revenue = detail_df["Revenue_pred"].sum()
 
@@ -362,8 +392,12 @@ class MediaPlanAnalyzer:
             "vertical": "ИТОГО",
             "num_campaigns": len(detail_df),
             "total_trp": total_trp,
-            "weighted_sov": (
-                (detail_df["SOV"] * detail_df["TRP"]).sum() / total_trp
+            "sov_active": (
+                total_trp / (comp_trp + total_trp)
+                if total_trp > 0 else 0
+            ),
+            "sov_year": (
+                total_trp / (total_comp_trp + total_trp)
                 if total_trp > 0 else 0
             ),
             "total_budget": total_budget,
@@ -376,7 +410,8 @@ class MediaPlanAnalyzer:
 
         # Округление
         summary_df["total_trp"] = summary_df["total_trp"].astype(int)
-        summary_df["weighted_sov"] = summary_df["weighted_sov"].round(4)
+        summary_df["sov_active"] = summary_df["sov_active"].round(4)
+        summary_df["sov_year"] = summary_df["sov_year"].round(4)
         summary_df["total_budget"] = summary_df["total_budget"].round(0).astype(int)
         summary_df["total_dtb"] = summary_df["total_dtb"].round(0).astype(int)
         summary_df["total_revenue"] = summary_df["total_revenue"].round(0).astype(int)

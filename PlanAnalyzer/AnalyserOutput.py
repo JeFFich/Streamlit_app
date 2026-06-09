@@ -72,6 +72,7 @@ def _prepare_detail_df(detail_df: pd.DataFrame) -> pd.DataFrame:
         "Месяц окончания": detail_df["month_end"].apply(_fmt_month),
         "TRP": detail_df["TRP"].apply(_fmt_num),
         "Бюджет": detail_df["budget"].apply(_fmt_money_mln),
+        "TRP конкурентов": detail_df["comp_TRP"].apply(_fmt_num),
         "SOV": detail_df["SOV"].apply(_fmt_pct),
         "DTB прогноз": detail_df["DTB_pred"].apply(_fmt_num),
         "Выручка прогноз": detail_df["Revenue_pred"].apply(_fmt_money_mln),
@@ -88,7 +89,8 @@ def _prepare_summary_df(summary_df: pd.DataFrame) -> pd.DataFrame:
         "Вертикаль": summary_df["vertical"],
         "Кол-во РК": summary_df["num_campaigns"],
         "Суммарный TRP": summary_df["total_trp"].apply(_fmt_num),
-        "Средневзв. SOV": summary_df["weighted_sov"].apply(_fmt_pct),
+        "SOV за периоды размещения": summary_df["sov_active"].apply(_fmt_pct),
+        "SOV за год": summary_df["sov_year"].apply(_fmt_pct),
         "Бюджет": summary_df["total_budget"].apply(_fmt_money_mln),
         "DTB": summary_df["total_dtb"].apply(_fmt_num),
         "Выручка": summary_df["total_revenue"].apply(_fmt_money_mln),
@@ -242,7 +244,7 @@ def _fill_detail_sheet(worksheet: gspread.Worksheet, detail_df: pd.DataFrame):
     """Заполняет лист с детальной таблицей по всем РК."""
     header = [
         "Категория", "Вертикаль", "Месяц старта", "Месяц окончания",
-        "TRP", "Бюджет", "SOV",
+        "TRP", "Бюджет", "TRP конкурентов", "SOV",
         "DTB прогноз", "Выручка прогноз", "ROMI прогноз"
     ]
 
@@ -255,6 +257,7 @@ def _fill_detail_sheet(worksheet: gspread.Worksheet, detail_df: pd.DataFrame):
             _fmt_month(row["month_end"]),
             _fmt_num(row["TRP"]),
             _fmt_money_mln(row["budget"]),
+            _fmt_num(row["comp_TRP"]),
             _fmt_pct(row["SOV"]),
             _fmt_num(row["DTB_pred"]),
             _fmt_money_mln(row["Revenue_pred"]),
@@ -274,8 +277,8 @@ def _fill_detail_sheet(worksheet: gspread.Worksheet, detail_df: pd.DataFrame):
 def _fill_summary_sheet(worksheet: gspread.Worksheet, summary_df: pd.DataFrame):
     """Заполняет лист со сводной таблицей по вертикалям."""
     header = [
-        "Вертикаль", "Кол-во РК", "Суммарный TRP", "Средневзв. SOV",
-        "Бюджет", "DTB", "Выручка", "ROMI"
+        "Вертикаль", "Кол-во РК", "Суммарный TRP", "SOV за периоды размещения",
+        "SOV за год", "Бюджет", "DTB", "Выручка", "ROMI"
     ]
 
     rows = []
@@ -289,7 +292,8 @@ def _fill_summary_sheet(worksheet: gspread.Worksheet, summary_df: pd.DataFrame):
             row["vertical"],
             int(row["num_campaigns"]),
             _fmt_num(row["total_trp"]),
-            _fmt_pct(row["weighted_sov"]),
+            _fmt_pct(row["sov_active"]),
+            _fmt_pct(row["sov_year"]),
             _fmt_money_mln(row["total_budget"]),
             _fmt_num(row["total_dtb"]),
             _fmt_money_mln(row["total_revenue"]),
