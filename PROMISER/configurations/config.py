@@ -26,6 +26,7 @@ SEEN_CURVES_PATH = BASE_PATH / "configurations/curves_mean.pickle"
 # Excel с DAILY DTB по logcat за 2025 год (в файле колонки = logcat, строки = даты).
 # Из него dtb_loader агрегирует помесячный DTB и склеивает комбо-разрезы.
 DTB_EXCEL_PATH = BASE_PATH / "configurations/logcats_DTB_2025.xlsx"
+DTB_EXCEL_PATH_PREV = BASE_PATH / "configurations/logcats_DTB_2024.xlsx"
 
 # Куда складываем итоговый pickle с матрицей (lookup) для MILP-оптимизатора.
 DEFAULT_OUTPUT_PATH = BASE_PATH / "CE_prediction_dict.pkl"

@@ -76,6 +76,7 @@ def build_per_logcat_dtb_dict(
 def dtb_for_logcats(
     logcats: str | list[str],
     monthly: pd.DataFrame | None = None,
+    path: str | None = None,
 ) -> dict[int, int]:
     """Сумма помесячного DTB по списку логкатов.
 
@@ -83,7 +84,8 @@ def dtb_for_logcats(
     предупреждаем print'ом и пропускаем его (как нулевой). Возвращаем
     {1..12: int}.
     """
-    monthly = load_monthly_dtb_table() if monthly is None else monthly
+    
+    monthly = load_monthly_dtb_table(path) if monthly is None else monthly
     parts = _split_logcats(logcats)
     if not parts:
         raise ValueError(f"Пустой ключ logcats: {logcats!r}")

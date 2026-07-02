@@ -6,6 +6,9 @@ import streamlit as st
 
 from PROMISER.data_uploading.table_parser import GoogleSheetsParser
 from PROMISER.slim_promiser import SlimPromiser
+from PROMISER.data_uploading.dtb_loader import load_monthly_dtb_table
+from PROMISER.configurations.config import DTB_EXCEL_PATH, DTB_EXCEL_PATH_PREV
+
 from configs import LOGICAL_CATEGORIES, CONFIG_SHEET_ID
 
 
@@ -332,3 +335,55 @@ def load_config_from_sheets_raw(user_id: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         st.error(f"❌ Конфигурация для «{user_id}» не найдена: {e}")
         return None
+
+# ==============================================================================
+# Обогащение расчетом коэффициентов сезонности
+# ==============================================================================
+
+def _get_categories_perc(category_dict: Dict[str, Dict], path: str) -> Dict[str, Dict]:
+    """
+    Внутренняя функция для нахождения месячной динамики DTB в категории, отнормированной на максимум за год
+    (некоторая простая прокси к сезонности спроса в категории)
+    
+    :param category_dict: Словарь с категориями (нужен только список логкатов)
+    :param path: Путь к нужной эксельке с DTB за год
+    
+    :return: Словарь отнормированных динамик
+    """
+    
+    monthly_dtb = load_monthly_dtb_table(path)
+    category_perc = {}
+    
+    for category, params in category_dict.items():
+        summed = monthly_dtb[params['logical_category']].sum(axis=1).astype("int64")
+        agged_months = {int(m): int(summed.at[m]) for m in summed.index}
+        
+        max_dtb = max(agged_months.values())
+        
+        # Для новых логкатов может быть все в нулях за предыдущий год
+        if max_dtb == 0:
+            category_perc[category] = {m: 1 for m in agged_months.keys()}
+        else:
+            category_perc[category] = {m: round(dtb / max_dtb, 3) for m, dtb in agged_months.items()}
+            
+    return category_perc
+
+def get_categories_seasonality(category_dict: Dict[str, Dict], fake: bool = False) -> None:
+    """
+    Внешняя функция, обогощающая словарь с категориями информацией о сезонности (добавляется доп. ключ)
+    
+    :param category_dict: Словарь с категориями (нужен только список логкатов)
+    :param fake: Флаг для фейкования сезонности (отключения если это не надо)
+    """
+    
+    perc_cur = _get_categories_perc(category_dict, DTB_EXCEL_PATH)
+    perc_prev = _get_categories_perc(category_dict, DTB_EXCEL_PATH_PREV)
+    
+    if fake:
+        for category in category_dict.keys():
+            category_dict[category]['season'] = {m: 1 for m in perc_cur[category].keys()}
+    else:
+        for category in category_dict.keys():
+            category_dict[category]['season'] = {
+                m: round((perc_cur[category][m] + perc_prev[category][m]) / 2, 3) for m in perc_cur[category].keys()
+            }

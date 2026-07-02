@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from CategoryWidgetGroup import CategoryWidgetGroup, ValidationError
-from data_parser import load_google_sheets, get_competitor_categories, get_target_audiences, transform_trp_comp_info, get_promiser_forecasts, transform_trp_cost_info, get_trp_categories_by_vertical, save_config_to_sheets, load_config_from_sheets_raw
+from data_parser import load_google_sheets, get_competitor_categories, get_target_audiences, transform_trp_comp_info, get_promiser_forecasts, transform_trp_cost_info, get_trp_categories_by_vertical, save_config_to_sheets, load_config_from_sheets_raw, get_categories_seasonality
 from configs import *
 from OptimizerNew.MediaPlanOptimizer import MediaPlanOptimizer
 from PlanAnalyzer.MediaPlanAnalyzer import MediaPlanAnalyzer
@@ -608,9 +608,11 @@ def render_config_management():
         if last_state:
             st.caption(f"Последнее сохранение: {last_state}")
             
-def prepare_data():
+def prepare_data(fake_seasonality: bool = False):
     """
     Внутрення функция для подготовки данных для оптимизатора/калькулятора
+    
+    :param fake_seasonality: флаг отключения рассчета сезонности
     """
     
     registry: Dict[int, CategoryWidgetGroup] = st.session_state["groups_registry"]
@@ -641,6 +643,9 @@ def prepare_data():
 
     # Прогнозы из промисера
     forecasts = get_promiser_forecasts(category_dict)
+    
+    # Сезонность
+    get_categories_seasonality(category_dict, not fake_seasonality)
     
     return category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts
 
@@ -769,13 +774,27 @@ def main():
             key="drive_upload",
             help="Если включено, то план продублируется в google-sheets (+ составится сводка по всем категориям, вертикалям и тотал)"
         )
+        st.checkbox(
+            "Включить в оптимизацию условие равномерности",
+            value=False,
+            key="uniform_flag",
+            help="Если включено, то план будет строиться более равномерным в каждой вертикали"
+        )
+        st.checkbox(
+            "Включить в оптимизацию сезонность",
+            value=False,
+            key="season_flag",
+            help="Если включено, то в прогнозах будет учитываться сезонность"
+        )
         
         # --- Дальнейший расчет ---
         if st.button("📊 Рассчитать оптимальный план", type="secondary", disabled=has_errors or not has_any_group):
             apply_correction = not st.session_state.get("revenue_correction", False)
             upload_to_drive = st.session_state.get("drive_upload", False)
+            cov_penalty = 0.1 if st.session_state.get("uniform_flag", False) else 0
+            seasonality = st.session_state.get("season_flag", False)
             
-            category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts = prepare_data()
+            category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts = prepare_data(seasonality)
             
             # st.json(vertical_dict)
             # st.json(category_dict)
@@ -784,7 +803,7 @@ def main():
             
             with st.spinner("⏳ Выполняется расчет плана..."):
                 try:
-                    optimizer = MediaPlanOptimizer()
+                    optimizer = MediaPlanOptimizer(coverage_penalty_weight=cov_penalty)
                     optimal_plan = optimizer.optimize(
                         categories=category_dict,
                         verticals=vertical_dict,

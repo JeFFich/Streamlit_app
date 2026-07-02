@@ -61,6 +61,11 @@ def create_variables(
         v["single"][c] = {}
         for m in months:
             v["single"][c][m] = model.NewBoolVar(f"single_{c}_{m}")
+            
+    # --- active[c]: BoolVar, категория c активна (есть хотя бы 1 РК) ---
+    v["active"] = {}
+    for c in cat_names:
+        v["active"][c] = model.NewBoolVar(f"active_{c}")
 
     # --- tau[c][m]: IntVar, фактический TRP в месяце ---
     v["tau"] = {}
@@ -127,7 +132,7 @@ def add_linking_constraints(
     v: Dict
 ) -> None:
     """
-    Связующие ограничения: x↔y, y↔s, y↔e, s+e↔single, tau=sum(t*x).
+    Связующие ограничения: active↔s, x↔y, y↔s, y↔e, s+e↔single, tau=sum(t*x).
     
     Позволяет двум РК идти подряд без перерыва в 1 месяц.
     Старт s[m]=1 означает "начало новой РК" и возможен, если предыдущий месяц
@@ -136,6 +141,16 @@ def add_linking_constraints(
     cat_names = list(categories.keys())
 
     for c in cat_names:
+        # =====================================================================
+        # C0: Связь active с числом РК (энейблер для выключения категории из планирования)
+        # =====================================================================
+        n_c = sum(v["s"][c][m] for m in months)
+
+        # Если active=1 → хотя бы 1 РК
+        model.Add(n_c >= 1).OnlyEnforceIf(v["active"][c])
+        # Если active=0 → 0 РК
+        model.Add(n_c == 0).OnlyEnforceIf(v["active"][c].Not())
+        
         # =====================================================================
         # C1 + C2: Связь x, y, tau
         # =====================================================================

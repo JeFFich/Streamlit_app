@@ -23,6 +23,10 @@ Thumbs.db
 *.csv
 *.xlsx
 
+# Две эксельки разрешаем
+!PROMISER/configurations/logcats_DTB_2024.xlsx
+!PROMISER/configurations/logcats_DTB_2025.xlsx
+
 # Ненужные папки и избычтоные файлы
 Optimizer/
 PROMISER_prediction_dict.pkl

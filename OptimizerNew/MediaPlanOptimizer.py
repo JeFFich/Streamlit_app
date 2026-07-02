@@ -30,6 +30,7 @@ class MediaPlanOptimizer:
                  months: List[int] = list(range(1, 13)),
                  max_total_trp_per_campaign: int = 5500,
                  penalty_alpha: float = 0.5,
+                 coverage_penalty_weight = 0.1,
                  solver_time_limit: int = 600,
                  solver_threads: int = 4):
         """
@@ -37,6 +38,7 @@ class MediaPlanOptimizer:
         :param months: Месяцы планирования.
         :param max_total_trp_per_campaign: Макс. суммарный TRP на одну непрерывную РК.
         :param penalty_alpha: Штраф за нарушение анализируемости (0..1).
+        :param coverage_penalty_weight: Штраф за неравномерность плана
         :param solver_time_limit: Лимит времени (секунды).
         :param solver_threads: Число потоков.
         """
@@ -44,6 +46,7 @@ class MediaPlanOptimizer:
         self.months = months
         self.max_total_trp = max_total_trp_per_campaign
         self.penalty_alpha = penalty_alpha
+        self.coverage_penalty_weight = coverage_penalty_weight
         self.solver_time_limit = solver_time_limit
         self.solver_threads = solver_threads
 
@@ -102,8 +105,8 @@ class MediaPlanOptimizer:
 
         # Целевая функция
         add_objective(
-            self.model, categories, forecasts, self.months, self.trp_levels,
-            self.v, self.penalty_alpha
+            self.model, categories, verticals, forecasts, self.months, self.trp_levels,
+            self.v, self.penalty_alpha, self.coverage_penalty_weight
         )
 
         # Решаем

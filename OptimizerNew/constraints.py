@@ -28,10 +28,15 @@ def _add_category_campaign_count_constraints(
     months: List, 
     v: Dict
 ) -> None:
+    
     for c, info in categories.items():
         n_c = sum(v["s"][c][m] for m in months)
-        model.Add(n_c >= info["min_campaigns"])
         model.Add(n_c <= info["max_campaigns"])
+        
+        if info["min_campaigns"] > 0:
+            # Жестко фиксируем индикатор active
+            model.Add(v["active"][c] == 1)
+            model.Add(n_c >= info["min_campaigns"])
 
 def _add_duration_constraints(
     model: cp_model.CpModel, 
@@ -90,7 +95,13 @@ def _add_category_budget_constraints(
         total_budget = sum(v["budget"][c][m] for m in months)
         min_b = info["min_budget"] // BUDGET_SCALE
         max_b = info["max_budget"] // BUDGET_SCALE
-        model.Add(total_budget >= min_b)
+        
+        # Ограничение на мин бюджет имеет смысл только при включенном индикаторе
+        if min_b > 0:
+            model.Add(total_budget >= min_b).OnlyEnforceIf(v["active"][c])
+        else:
+            model.Add(total_budget >= min_b)
+        
         model.Add(total_budget <= max_b)
 
 def _add_min_trp_constraints(
@@ -164,12 +175,12 @@ def _add_mandatory_start_constraints(
         strict = info.get("strict_start", False)
 
         for m in mandatory:
-            model.Add(v["y"][c][m] == 1)
+            model.Add(v["y"][c][m] == 1).OnlyEnforceIf(v["active"][c])
 
         if strict and mandatory:
             for m in months:
                 if m not in mandatory:
-                    model.Add(v["s"][c][m] == 0)
+                    model.Add(v["s"][c][m] == 0).OnlyEnforceIf(v["active"][c])
 
 def _add_overlap_exclusion_constraints(
     model: cp_model.CpModel, 
