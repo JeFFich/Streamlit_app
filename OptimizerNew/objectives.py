@@ -37,7 +37,7 @@ def _compute_avg_revenue_at_trp1500(
 
     return avg_rev
 
-def add_coverage_uniformity_penalty(
+def _add_coverage_uniformity_penalty(
     model: cp_model.CpModel,
     categories: Dict[str, Dict],
     verticals: Dict[str, Dict],
@@ -129,7 +129,8 @@ def add_objective(
     trp_levels: List[int],
     v: Dict,
     penalty_alpha: float,
-    coverage_penalty_weight: float = 0
+    coverage_penalty_weight: float = 0,
+    season_deg: int = 1
 ) -> None:
     """
     Целевая функция: max sum(revenue * x) - alpha * sum(revenue * w),
@@ -146,7 +147,7 @@ def add_objective(
                     continue
 
                 # Положительная компонента: revenue * x
-                objective_terms.append(rev * v["x"][c][m][t] * categories[c]['season'][m] ** 3)
+                objective_terms.append(rev * v["x"][c][m][t] * (categories[c]['season'][m] ** season_deg))
 
                 # Штраф: -alpha * revenue * (x AND f)
                 # Линеаризуем: w = x AND f
@@ -155,11 +156,11 @@ def add_objective(
                 model.AddBoolOr([v["x"][c][m][t].Not(), v["f"][c][m].Not()]).OnlyEnforceIf(w.Not())
 
                 penalty_val = int(round(penalty_alpha * rev))
-                objective_terms.append(-penalty_val * w * categories[c]['season'][m] ** 3)
+                objective_terms.append(-penalty_val * w * (categories[c]['season'][m] ** season_deg))
 
     # Штраф за неравномерность покрытия
     if coverage_penalty_weight > 0:
-        add_coverage_uniformity_penalty(
+        _add_coverage_uniformity_penalty(
             model, categories, verticals, forecast_dict, months,
             v, objective_terms, penalty_weight=coverage_penalty_weight
         )

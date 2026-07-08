@@ -1,4 +1,5 @@
 from typing import List, Optional, Tuple, Dict, Any
+from io import BytesIO
 import pandas as pd
 import pickle
 import json
@@ -337,7 +338,56 @@ def load_config_from_sheets_raw(user_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 # ==============================================================================
-# Обогащение расчетом коэффициентов сезонности
+# Считывание информации о сезонности из внешних источников
+# ==============================================================================
+
+@st.cache_data(show_spinner=False)
+def _parse_seasonality_bytes(file_bytes: bytes) -> Dict[str, Dict]:
+    """
+    Считывает первый лист Excel-файла (из байтов) и представляет каждую строку как словарь.
+    Кешируется по содержимому файла (file_bytes), чтобы не перечитывать постоянно файл
+
+    :param file_bytes: Файл в байтовом представлении
+    
+    :return: Словарь коэффициентов сезонности по месяцам для всех категорий в файле
+    """
+
+    df = pd.read_excel(BytesIO(file_bytes), sheet_name=0)
+
+    if df.empty or df.shape[1] < 13:
+        raise ValueError("Неверный формат файла")
+
+    key_col = df.columns[0]          # первый столбец — ключ
+    value_cols = df.columns[1:13]    # следующие 12 столбцов — значения
+
+    result = {}
+    for _, row in df.iterrows():
+        key = row[key_col]
+        if pd.isna(key):
+            continue
+        
+        result[key] = {
+            int(ind) + 1: (None if pd.isna(row[col]) else row[col])
+            for ind, col in enumerate(value_cols)
+        }
+
+    return result
+
+def parse_seasonality_file(file) -> dict:
+    """
+    Обёртка над кешируемой функцией: извлекает байты из UploadedFile
+    и передаёт их в закешированный парсер.
+
+    :param file: Загруженный файл с коэффициентами
+
+    :return: Словарь коэффициентов сезонности по месяцам для всех категорий в файле
+    """
+    
+    file_bytes = file.getvalue() 
+    return _parse_seasonality_bytes(file_bytes)
+
+# ==============================================================================
+# Обогащение параметров категорий коэффициентами сезонности
 # ==============================================================================
 
 def _get_categories_perc(category_dict: Dict[str, Dict], path: str) -> Dict[str, Dict]:
@@ -368,12 +418,13 @@ def _get_categories_perc(category_dict: Dict[str, Dict], path: str) -> Dict[str,
             
     return category_perc
 
-def get_categories_seasonality(category_dict: Dict[str, Dict], fake: bool = False) -> None:
+def get_categories_seasonality(category_dict: Dict[str, Dict], fake: bool = False, ext_season_data: Dict[str, Dict] = None) -> None:
     """
     Внешняя функция, обогощающая словарь с категориями информацией о сезонности (добавляется доп. ключ)
     
     :param category_dict: Словарь с категориями (нужен только список логкатов)
     :param fake: Флаг для фейкования сезонности (отключения если это не надо)
+    :param ext_season_data: Словарь с сезонностью из внешних источников
     """
     
     perc_cur = _get_categories_perc(category_dict, DTB_EXCEL_PATH)
@@ -384,6 +435,10 @@ def get_categories_seasonality(category_dict: Dict[str, Dict], fake: bool = Fals
             category_dict[category]['season'] = {m: 1 for m in perc_cur[category].keys()}
     else:
         for category in category_dict.keys():
-            category_dict[category]['season'] = {
-                m: round((perc_cur[category][m] + perc_prev[category][m]) / 2, 3) for m in perc_cur[category].keys()
-            }
+            # Если во внешнем источнике нет сезонности для категории, берем на основе m42
+            if ext_season_data is None or category not in ext_season_data:
+                category_dict[category]['season'] = {
+                    m: round((perc_cur[category][m] + perc_prev[category][m]) / 2, 3) for m in perc_cur[category].keys()
+                }
+            else:
+                category_dict[category]['season'] = ext_season_data[category]

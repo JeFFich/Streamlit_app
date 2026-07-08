@@ -2,11 +2,13 @@ import streamlit as st
 from typing import List, Tuple, Dict, Any
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import pandas as pd
 
 from CategoryWidgetGroup import CategoryWidgetGroup, ValidationError
-from data_parser import load_google_sheets, get_competitor_categories, get_target_audiences, transform_trp_comp_info, get_promiser_forecasts, transform_trp_cost_info, get_trp_categories_by_vertical, save_config_to_sheets, load_config_from_sheets_raw, get_categories_seasonality
+from data_parser import load_google_sheets, get_competitor_categories, get_target_audiences, transform_trp_comp_info 
+from data_parser import get_promiser_forecasts, transform_trp_cost_info, get_trp_categories_by_vertical, save_config_to_sheets 
+from data_parser import load_config_from_sheets_raw, get_categories_seasonality, parse_seasonality_file
 from configs import *
+
 from OptimizerNew.MediaPlanOptimizer import MediaPlanOptimizer
 from PlanAnalyzer.MediaPlanAnalyzer import MediaPlanAnalyzer
 from PlanAnalyzer.AnalyserOutput import create_analysis_plotly_view, create_analysis_google_sheet
@@ -608,7 +610,7 @@ def render_config_management():
         if last_state:
             st.caption(f"Последнее сохранение: {last_state}")
             
-def prepare_data(fake_seasonality: bool = False):
+def prepare_data(fake_seasonality: bool = False, ext_season_data: Dict[str, Dict] = None):
     """
     Внутрення функция для подготовки данных для оптимизатора/калькулятора
     
@@ -645,7 +647,7 @@ def prepare_data(fake_seasonality: bool = False):
     forecasts = get_promiser_forecasts(category_dict)
     
     # Сезонность
-    get_categories_seasonality(category_dict, not fake_seasonality)
+    get_categories_seasonality(category_dict, not fake_seasonality, ext_season_data)
     
     return category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts
 
@@ -667,6 +669,15 @@ def main():
         div[data-testid="stAlert"] {
             max-height: 50px;
             overflow-y: auto !important;
+        }
+        
+        /* Скрыть значение над бегунком слайдера */
+        div[data-testid="stSliderThumbValue"] {
+            display: none !important;
+        }
+        /* Скрыть подписи min/max по краям слайдера */
+        div[data-testid="stSliderTickBar"] {
+            display: none !important;
         }
         </style>
         """,
@@ -762,6 +773,59 @@ def main():
     tab_optimize, tab_evaluate = st.tabs(["Расчёт оптимального плана", "Обсчёт текущего плана"])
     
     with tab_optimize:
+        uniform_enabled = st.checkbox(
+            "Включить в оптимизацию условие равномерности",
+            value=False,
+            key="uniform_flag",
+            help="Если включено, то план будет строиться более равномерным в каждой вертикали"
+        )
+        if uniform_enabled:
+            col_slider, _ = st.columns([1, 2])
+            with col_slider:
+                st.slider(
+                    "Значимость равномерности",
+                    min_value=0.05,
+                    max_value=0.25,
+                    step=0.05,
+                    key="uniform_weight",
+                    help="Насколько сильно учитывать условие равномерности",
+                )
+            
+        season_enabled = st.checkbox(
+            "Включить в оптимизацию сезонность",
+            value=False,
+            key="season_flag",
+            help="Если включено, то в прогнозах будет учитываться сезонность"
+        )
+        ext_season_data = None
+        if season_enabled:
+            seasonality_file = st.file_uploader(
+                "Файл с данными сезонности (xlsx)",
+                type=["xlsx", "xls"],
+                key="season_upload",
+                help="Excel-файл; считывается только первый лист - [пример](https://docs.google.com/spreadsheets/d/1gffrPztgXj6P_n9MDDEf7bGUSFUb5gMm0FI0M5kLBAw)",
+            )
+            if seasonality_file is not None:
+                try:
+                    ext_season_data = parse_seasonality_file(seasonality_file)
+                    st.success(f"✅ Файл сезонности загружен")
+                except Exception as e:
+                    ext_season_data = None
+                    st.error(f"❌ Ошибка при чтении файла сезонности; проверьте введенный формат")
+                    
+            col_slider, _ = st.columns([1, 2])   
+            with col_slider:
+                st.slider(
+                    "Значимость сезонности",
+                    min_value=1,
+                    max_value=5,
+                    step=1,
+                    key="season_weight",
+                    help="Насколько сильно учитывать сезонность",
+                )
+        
+        st.divider()
+        
         st.checkbox(
             "📐 Включить корректировку плана",
             value=False,
@@ -774,36 +838,27 @@ def main():
             key="drive_upload",
             help="Если включено, то план продублируется в google-sheets (+ составится сводка по всем категориям, вертикалям и тотал)"
         )
-        st.checkbox(
-            "Включить в оптимизацию условие равномерности",
-            value=False,
-            key="uniform_flag",
-            help="Если включено, то план будет строиться более равномерным в каждой вертикали"
-        )
-        st.checkbox(
-            "Включить в оптимизацию сезонность",
-            value=False,
-            key="season_flag",
-            help="Если включено, то в прогнозах будет учитываться сезонность"
-        )
         
         # --- Дальнейший расчет ---
         if st.button("📊 Рассчитать оптимальный план", type="secondary", disabled=has_errors or not has_any_group):
             apply_correction = not st.session_state.get("revenue_correction", False)
             upload_to_drive = st.session_state.get("drive_upload", False)
-            cov_penalty = 0.1 if st.session_state.get("uniform_flag", False) else 0
+            cov_penalty = st.session_state.get("uniform_weight", 0) if st.session_state.get("uniform_flag", False) else 0
             seasonality = st.session_state.get("season_flag", False)
+            season_penalty = st.session_state.get("season_weight", 1) if seasonality else 1
             
-            category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts = prepare_data(seasonality)
+            category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts = prepare_data(seasonality, ext_season_data)
+            
+            st.text(f"{cov_penalty}, {season_penalty}")
             
             # st.json(vertical_dict)
-            # st.json(category_dict)
+            st.json(category_dict)
             # st.json(trp_cost_dict)
             # st.json(competitors_dict)
             
             with st.spinner("⏳ Выполняется расчет плана..."):
                 try:
-                    optimizer = MediaPlanOptimizer(coverage_penalty_weight=cov_penalty)
+                    optimizer = MediaPlanOptimizer(coverage_penalty_weight=cov_penalty, season_penalty=season_penalty)
                     optimal_plan = optimizer.optimize(
                         categories=category_dict,
                         verticals=vertical_dict,

@@ -8,8 +8,7 @@ from typing import Dict, List, Tuple, Any
 
 from OptimizerNew.variables import (
     create_variables, add_linking_constraints,
-    add_cumulative_trp_constraints, add_dynamic_cost_constraints,
-    BUDGET_SCALE
+    add_cumulative_trp_constraints, add_dynamic_cost_constraints
 )
 from OptimizerNew.constraints import add_logical_constraints
 from OptimizerNew.objectives import add_objective
@@ -31,6 +30,7 @@ class MediaPlanOptimizer:
                  max_total_trp_per_campaign: int = 5500,
                  penalty_alpha: float = 0.5,
                  coverage_penalty_weight = 0.1,
+                 season_penalty = 1,
                  solver_time_limit: int = 600,
                  solver_threads: int = 4):
         """
@@ -39,6 +39,7 @@ class MediaPlanOptimizer:
         :param max_total_trp_per_campaign: Макс. суммарный TRP на одну непрерывную РК.
         :param penalty_alpha: Штраф за нарушение анализируемости (0..1).
         :param coverage_penalty_weight: Штраф за неравномерность плана
+        :param season_penalty: Степень учета коэффициентов сезонности
         :param solver_time_limit: Лимит времени (секунды).
         :param solver_threads: Число потоков.
         """
@@ -47,6 +48,7 @@ class MediaPlanOptimizer:
         self.max_total_trp = max_total_trp_per_campaign
         self.penalty_alpha = penalty_alpha
         self.coverage_penalty_weight = coverage_penalty_weight
+        self.season_penalty_weight = season_penalty
         self.solver_time_limit = solver_time_limit
         self.solver_threads = solver_threads
 
