@@ -852,7 +852,7 @@ def main():
             st.text(f"{cov_penalty}, {season_penalty}")
             
             # st.json(vertical_dict)
-            st.json(category_dict)
+            # st.json(category_dict)
             # st.json(trp_cost_dict)
             # st.json(competitors_dict)
             
