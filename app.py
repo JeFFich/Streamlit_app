@@ -849,8 +849,6 @@ def main():
             
             category_dict, vertical_dict, trp_cost_dict, competitors_dict, forecasts = prepare_data(seasonality, ext_season_data)
             
-            st.text(f"{cov_penalty}, {season_penalty}")
-            
             # st.json(vertical_dict)
             # st.json(category_dict)
             # st.json(trp_cost_dict)
